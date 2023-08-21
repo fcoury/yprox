@@ -7,13 +7,13 @@ struct Cli {
     from_addr: String,
 
     /// The address to forward to
-    to_addr: String,
+    to_addr: Vec<String>,
 }
 
 #[tokio::main]
 async fn main() {
     let args = Cli::parse();
 
-    println!("Listening on {} -> {}", args.from_addr, args.to_addr);
+    println!("Listening on {} -> {:?}", args.from_addr, args.to_addr);
     start(args.from_addr, args.to_addr).await;
 }
