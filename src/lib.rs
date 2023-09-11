@@ -7,6 +7,57 @@ use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
 use tokio::try_join;
 
+/// Starts a TCP server that forwards incoming connections to multiple destinations.
+///
+/// # Arguments
+///
+/// * `from_addr` - The address to bind the server to.
+/// * `to_addrs` - A vector of destination addresses to forward incoming connections to.
+///
+/// # Example
+///
+/// ```
+/// #[tokio::main]
+///
+/// async fn main() {
+///     let from_addr = "127.0.0.1:8080";
+///     let to_addrs = vec!["127.0.0.1:8081", "127.0.0.1:8082"];
+///     start(from_addr, to_addrs).await;
+/// }
+/// ```
+pub async fn start(from_addr: impl Into<String>, to_addrs: Vec<String>) {
+    let listener = TcpListener::bind(from_addr.into())
+        .await
+        .expect("Failed to bind listener");
+
+    loop {
+        let (client, _) = listener
+            .accept()
+            .await
+            .expect("Failed to accept connection");
+        tokio::spawn(handle_client(client, to_addrs.clone()));
+    }
+}
+
+/// Handles a client connection by proxying data to multiple target addresses.
+///
+/// # Arguments
+///
+/// * `client` - A `TcpStream` representing the client connection.
+/// * `target_addrs` - A `Vec<String>` containing the target addresses to proxy data to.
+///
+/// # Examples
+///
+/// ```
+/// use tokio::net::TcpStream;
+/// use my_proxy::handle_client;
+///
+/// async fn run() {
+///     let client = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+///     let target_addrs = vec!["127.0.0.1:9000".to_string(), "127.0.0.1:9001".to_string()];
+///     handle_client(client, target_addrs).await;
+/// }
+/// ```
 async fn handle_client(client: TcpStream, target_addrs: Vec<String>) {
     let mut server_handles: Vec<JoinHandle<_>> = Vec::new();
     let mut client_to_server_handles: Vec<JoinHandle<_>> = Vec::new();
@@ -55,6 +106,32 @@ async fn handle_client(client: TcpStream, target_addrs: Vec<String>) {
     });
 }
 
+/// Proxies data between a TCP stream and a channel of data.
+///
+/// # Arguments
+///
+/// * `stream` - An `Arc<Mutex<TcpStream>>` representing the TCP stream to proxy data to/from.
+/// * `tx` - An `Arc<Mutex<mpsc::Sender<Vec<u8>>>>` representing the channel to send data to the TCP stream.
+/// * `rx` - An `Arc<Mutex<mpsc::Receiver<Vec<u8>>>>` representing the channel to receive data from the TCP stream.
+/// * `direction` - A `String` representing the direction of the data flow (e.g. "client to server").
+///
+/// # Examples
+///
+/// ```
+/// use tokio::net::TcpStream;
+/// use tokio::sync::{mpsc, Mutex, Arc};
+/// use my_proxy::proxy;
+///
+/// async fn run() {
+///     let stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
+///     let (tx, rx) = mpsc::channel(1024);
+///     let stream = Arc::new(Mutex::new(stream));
+///     let tx = Arc::new(Mutex::new(tx));
+///     let rx = Arc::new(Mutex::new(rx));
+///     let direction = "client to server".to_string();
+///     proxy(stream, tx, rx, direction).await.unwrap();
+/// }
+/// ```
 async fn proxy(
     stream: Arc<Mutex<TcpStream>>,
     tx: Arc<Mutex<mpsc::Sender<Vec<u8>>>>,
@@ -91,6 +168,19 @@ async fn proxy(
     Ok(())
 }
 
+/// Prints a hex dump of the given data with an optional direction string.
+///
+/// # Arguments
+///
+/// * `data` - A slice of bytes to be printed as a hex dump.
+/// * `direction` - An optional string indicating the direction of the data flow.
+///
+/// # Example
+///
+/// ```
+/// let data = [0x48, 0x65, 0x6C, 0x6C, 0x6F];
+/// hex_dump(&data, "OUTGOING");
+/// ```
 fn hex_dump(data: &[u8], direction: &str) {
     const WIDTH: usize = 16;
 
@@ -108,19 +198,5 @@ fn hex_dump(data: &[u8], direction: &str) {
             .collect();
 
         println!("{}: {:47}  |{}|", direction, hex.join(" "), ascii);
-    }
-}
-
-pub async fn start(from_addr: impl Into<String>, to_addrs: Vec<String>) {
-    let listener = TcpListener::bind(from_addr.into())
-        .await
-        .expect("Failed to bind listener");
-
-    loop {
-        let (client, _) = listener
-            .accept()
-            .await
-            .expect("Failed to accept connection");
-        tokio::spawn(handle_client(client, to_addrs.clone()));
     }
 }

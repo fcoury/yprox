@@ -1,7 +1,10 @@
 [package]
 name = "yprox"
+description = "A modifying, multiplexer tcp proxy server tool and library."
 version = "0.1.0"
+authors = ["Felipe Coury <felipe.coury@gmail.com>"]
 edition = "2021"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
