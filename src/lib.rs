@@ -59,7 +59,7 @@ pub async fn start(from_addr: impl Into<String>, to_addrs: Vec<String>) {
 pub async fn start_modifying(
     from_addr: impl Into<String>,
     to_addrs: Vec<String>,
-    modify: Option<fn(Vec<u8>) -> Vec<u8>>,
+    modify: Option<Arc<Box<dyn Fn(Vec<u8>) -> Vec<u8> + Send + Sync>>>,
 ) {
     let listener = TcpListener::bind(from_addr.into())
         .await
@@ -70,7 +70,7 @@ pub async fn start_modifying(
             .accept()
             .await
             .expect("Failed to accept connection");
-        tokio::spawn(handle_client(client, to_addrs.clone(), modify));
+        tokio::spawn(handle_client(client, to_addrs.clone(), modify.clone()));
     }
 }
 
@@ -101,7 +101,7 @@ pub async fn start_modifying(
 async fn handle_client(
     client: TcpStream,
     target_addrs: Vec<String>,
-    modify: Option<fn(Vec<u8>) -> Vec<u8>>,
+    modify: Option<Arc<Box<dyn Fn(Vec<u8>) -> Vec<u8> + Send + Sync>>>,
 ) {
     let mut server_handles: Vec<JoinHandle<_>> = Vec::new();
     let mut client_to_server_handles: Vec<JoinHandle<_>> = Vec::new();
@@ -131,14 +131,19 @@ async fn handle_client(
             client_tx.clone(),
             server_rx.clone(),
             direction,
-            modify,
+            modify.clone(),
         ));
         client_to_server_handles.push(client_to_server);
 
         if n == 0 {
             let direction = format!("Server[{}] -> Client", target_addr);
-            let server_to_client =
-                tokio::spawn(proxy(server, server_tx, client_rx, direction, modify));
+            let server_to_client = tokio::spawn(proxy(
+                server,
+                server_tx,
+                client_rx,
+                direction,
+                modify.clone(),
+            ));
             server_handles.push(server_to_client);
         }
     }
@@ -192,7 +197,7 @@ async fn proxy(
     tx: Arc<Mutex<mpsc::Sender<Vec<u8>>>>,
     rx: Arc<Mutex<mpsc::Receiver<Vec<u8>>>>,
     direction: String,
-    modify: Option<fn(Vec<u8>) -> Vec<u8>>,
+    modify: Option<Arc<Box<dyn Fn(Vec<u8>) -> Vec<u8> + Send + Sync>>>,
 ) -> Result<(), std::io::Error> {
     let mut buf = vec![0u8; 4096];
 
@@ -209,8 +214,12 @@ async fn proxy(
                 }
                 println!("\n{}: Transferred {} bytes", direction, n);
                 hex_dump(&buf[..n], &direction);
-                let modify = modify.unwrap_or(|x| x);
-                tx.lock().await.send(modify(buf[..n].to_vec())).await.expect("Failed to send data");
+                let data_to_send = if let Some(modify_fn) = &modify {
+                    modify_fn(buf[..n].to_vec())
+                } else {
+                    buf[..n].to_vec()
+                };
+                tx.lock().await.send(data_to_send).await.expect("Failed to send data");
             }
             data = locked_rx.recv() => {
                 if let Some(data) = data {
