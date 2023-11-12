@@ -119,11 +119,9 @@ async fn handle_client(
 
         let (client_tx, client_rx) = mpsc::channel(32);
         let client_rx = Arc::new(Mutex::new(client_rx));
-        let client_tx = Arc::new(Mutex::new(client_tx));
 
         let (server_tx, server_rx) = mpsc::channel(32);
         let server_rx = Arc::new(Mutex::new(server_rx));
-        let server_tx = Arc::new(Mutex::new(server_tx));
 
         let direction = format!("Client -> Server[{}]", target_addr);
         let client_to_server = tokio::spawn(proxy(
@@ -161,7 +159,7 @@ async fn handle_client(
 /// # Arguments
 ///
 /// * `stream` - An `Arc<Mutex<TcpStream>>` representing the TCP stream to proxy data to/from.
-/// * `tx` - An `Arc<Mutex<mpsc::Sender<Vec<u8>>>>` representing the channel to send modified data to the TCP stream.
+/// * `tx` - An `mpsc::Sender<Vec<u8>>` representing the channel to send modified data to the TCP stream.
 /// * `rx` - An `Arc<Mutex<mpsc::Receiver<Vec<u8>>>>` representing the channel to receive data from the TCP stream.
 /// * `direction` - A `String` representing the direction of the data flow (e.g. "client to server").
 /// * `modify` - An optional function to modify the data before sending.
@@ -177,7 +175,6 @@ async fn handle_client(
 ///     let stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
 ///     let (tx, rx) = mpsc::channel(1024);
 ///     let stream = Arc::new(Mutex::new(stream));
-///     let tx = Arc::new(Mutex::new(tx));
 ///     let rx = Arc::new(Mutex::new(rx));
 ///     let direction = "client to server".to_string();
 ///     let modify_fn = |data: Vec<u8>| -> Vec<u8> {
@@ -189,7 +186,7 @@ async fn handle_client(
 /// ```
 async fn proxy(
     stream: Arc<Mutex<TcpStream>>,
-    tx: Arc<Mutex<mpsc::Sender<Vec<u8>>>>,
+    tx: mpsc::Sender<Vec<u8>>,
     rx: Arc<Mutex<mpsc::Receiver<Vec<u8>>>>,
     direction: String,
     modify: Option<fn(Vec<u8>) -> Vec<u8>>,
@@ -210,7 +207,7 @@ async fn proxy(
                 println!("\n{}: Transferred {} bytes", direction, n);
                 hex_dump(&buf[..n], &direction);
                 let modify = modify.unwrap_or(|x| x);
-                tx.lock().await.send(modify(buf[..n].to_vec())).await.expect("Failed to send data");
+                tx.send(modify(buf[..n].to_vec())).await.expect("Failed to send data");
             }
             data = locked_rx.recv() => {
                 if let Some(data) = data {
