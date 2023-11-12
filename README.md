@@ -51,3 +51,22 @@ async fn main() {
 ```
 
 This will start a proxy server that listens on 127.0.0.1:8080 and forwards incoming connections to 127.0.0.1:9000 and 127.0.0.1:9001.
+
+#### Using a modifying function
+
+Optionally you can modify the data stream before forwarding it to the target. You can do that using the `start_modifying` function:
+
+```rust
+use yprox::proxy::Proxy;
+
+#[tokio::main]
+async fn main() {
+    let listen_addr = "127.0.0.1:8080";
+    let target_addrs = vec!["127.0.0.1:9000", "127.0.0.1:9001"];
+    let modify_fn = |data: Vec<u8>| -> Vec<u8> {
+        // Modify data here
+        data
+    };
+    proxy(listen_addr, target_addrs, Some(modify_fn)).await.unwrap();
+}
+```

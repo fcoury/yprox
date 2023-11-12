@@ -26,6 +26,41 @@ use tokio::try_join;
 /// }
 /// ```
 pub async fn start(from_addr: impl Into<String>, to_addrs: Vec<String>) {
+    start_modifying(from_addr, to_addrs, None).await;
+}
+
+/// Starts a TCP server that forwards incoming connections to multiple destinations with an optional data modification function.
+///
+/// This function is an extension of `start`, allowing the caller to specify a function to modify
+/// the data before forwarding. The `modify` function is applied to each chunk of data
+/// received from the client before it is sent to the server.
+///
+/// # Arguments
+///
+/// * `from_addr` - The address to bind the server to.
+/// * `to_addrs` - A vector of destination addresses to forward incoming connections to.
+/// * `modify` - An optional function to modify the data. It takes a `Vec<u8>` and returns a `Vec<u8>`.
+///
+/// # Example
+///
+/// ```
+/// #[tokio::main]
+///
+/// async fn main() {
+///     let from_addr = "127.0.0.1:8080";
+///     let to_addrs = vec!["127.0.0.1:8081", "127.0.0.1:8082"];
+///     let modify_fn = |data: Vec<u8>| -> Vec<u8> {
+///         // Modify data here
+///         data
+///     };
+///     start_modifying(from_addr, to_addrs, Some(modify_fn)).await;
+/// }
+/// ```
+pub async fn start_modifying(
+    from_addr: impl Into<String>,
+    to_addrs: Vec<String>,
+    modify: Option<fn(Vec<u8>) -> Vec<u8>>,
+) {
     let listener = TcpListener::bind(from_addr.into())
         .await
         .expect("Failed to bind listener");
@@ -35,7 +70,7 @@ pub async fn start(from_addr: impl Into<String>, to_addrs: Vec<String>) {
             .accept()
             .await
             .expect("Failed to accept connection");
-        tokio::spawn(handle_client(client, to_addrs.clone()));
+        tokio::spawn(handle_client(client, to_addrs.clone(), modify));
     }
 }
 
@@ -45,6 +80,7 @@ pub async fn start(from_addr: impl Into<String>, to_addrs: Vec<String>) {
 ///
 /// * `client` - A `TcpStream` representing the client connection.
 /// * `target_addrs` - A `Vec<String>` containing the target addresses to proxy data to.
+/// * `modify` - An optional function to modify the data. It takes a `Vec<u8>` and returns a `Vec<u8>`.
 ///
 /// # Examples
 ///
@@ -55,10 +91,18 @@ pub async fn start(from_addr: impl Into<String>, to_addrs: Vec<String>) {
 /// async fn run() {
 ///     let client = TcpStream::connect("127.0.0.1:8080").await.unwrap();
 ///     let target_addrs = vec!["127.0.0.1:9000".to_string(), "127.0.0.1:9001".to_string()];
-///     handle_client(client, target_addrs).await;
+///     let modify_fn = |data: Vec<u8>| -> Vec<u8> {
+///         // Modify data here
+///         data
+///     };
+///     handle_client(client, target_addrs, modify_fn).await;
 /// }
 /// ```
-async fn handle_client(client: TcpStream, target_addrs: Vec<String>) {
+async fn handle_client(
+    client: TcpStream,
+    target_addrs: Vec<String>,
+    modify: Option<fn(Vec<u8>) -> Vec<u8>>,
+) {
     let mut server_handles: Vec<JoinHandle<_>> = Vec::new();
     let mut client_to_server_handles: Vec<JoinHandle<_>> = Vec::new();
     let client = Arc::new(Mutex::new(client));
@@ -87,12 +131,14 @@ async fn handle_client(client: TcpStream, target_addrs: Vec<String>) {
             client_tx.clone(),
             server_rx.clone(),
             direction,
+            modify,
         ));
         client_to_server_handles.push(client_to_server);
 
         if n == 0 {
             let direction = format!("Server[{}] -> Client", target_addr);
-            let server_to_client = tokio::spawn(proxy(server, server_tx, client_rx, direction));
+            let server_to_client =
+                tokio::spawn(proxy(server, server_tx, client_rx, direction, modify));
             server_handles.push(server_to_client);
         }
     }
@@ -106,21 +152,26 @@ async fn handle_client(client: TcpStream, target_addrs: Vec<String>) {
     });
 }
 
-/// Proxies data between a TCP stream and a channel of data.
+/// Proxies data between a TCP stream and a channel of data, with an optional data modification function.
+///
+/// This function is similar to `proxy` but allows for modification of the data
+/// using the provided `modify` function. The data received from the stream is modified
+/// before being sent through the channel.
 ///
 /// # Arguments
 ///
 /// * `stream` - An `Arc<Mutex<TcpStream>>` representing the TCP stream to proxy data to/from.
-/// * `tx` - An `Arc<Mutex<mpsc::Sender<Vec<u8>>>>` representing the channel to send data to the TCP stream.
+/// * `tx` - An `Arc<Mutex<mpsc::Sender<Vec<u8>>>>` representing the channel to send modified data to the TCP stream.
 /// * `rx` - An `Arc<Mutex<mpsc::Receiver<Vec<u8>>>>` representing the channel to receive data from the TCP stream.
 /// * `direction` - A `String` representing the direction of the data flow (e.g. "client to server").
+/// * `modify` - An optional function to modify the data before sending.
 ///
 /// # Examples
 ///
 /// ```
 /// use tokio::net::TcpStream;
 /// use tokio::sync::{mpsc, Mutex, Arc};
-/// use my_proxy::proxy;
+/// use my_proxy::proxy_modifying;
 ///
 /// async fn run() {
 ///     let stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
@@ -129,7 +180,11 @@ async fn handle_client(client: TcpStream, target_addrs: Vec<String>) {
 ///     let tx = Arc::new(Mutex::new(tx));
 ///     let rx = Arc::new(Mutex::new(rx));
 ///     let direction = "client to server".to_string();
-///     proxy(stream, tx, rx, direction).await.unwrap();
+///     let modify_fn = |data: Vec<u8>| -> Vec<u8> {
+///         // Modify data here
+///         data
+///     };
+///     proxy_modifying(stream, tx, rx, direction, Some(modify_fn)).await.unwrap();
 /// }
 /// ```
 async fn proxy(
@@ -137,6 +192,7 @@ async fn proxy(
     tx: Arc<Mutex<mpsc::Sender<Vec<u8>>>>,
     rx: Arc<Mutex<mpsc::Receiver<Vec<u8>>>>,
     direction: String,
+    modify: Option<fn(Vec<u8>) -> Vec<u8>>,
 ) -> Result<(), std::io::Error> {
     let mut buf = vec![0u8; 4096];
 
@@ -153,7 +209,8 @@ async fn proxy(
                 }
                 println!("\n{}: Transferred {} bytes", direction, n);
                 hex_dump(&buf[..n], &direction);
-                tx.lock().await.send(buf[..n].to_vec()).await.expect("Failed to send data");
+                let modify = modify.unwrap_or(|x| x);
+                tx.lock().await.send(modify(buf[..n].to_vec())).await.expect("Failed to send data");
             }
             data = locked_rx.recv() => {
                 if let Some(data) = data {
