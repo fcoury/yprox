@@ -17,8 +17,9 @@ use tokio::try_join;
 /// # Example
 ///
 /// ```
-/// #[tokio::main]
+/// use yprox::start;
 ///
+/// #[tokio::main]
 /// async fn main() {
 ///     let from_addr = "127.0.0.1:8080";
 ///     let to_addrs = vec!["127.0.0.1:8081", "127.0.0.1:8082"];
@@ -44,8 +45,9 @@ pub async fn start(from_addr: impl Into<String>, to_addrs: Vec<String>) {
 /// # Example
 ///
 /// ```
-/// #[tokio::main]
+/// use yprox::start_modifying;
 ///
+/// #[tokio::main]
 /// async fn main() {
 ///     let from_addr = "127.0.0.1:8080";
 ///     let to_addrs = vec!["127.0.0.1:8081", "127.0.0.1:8082"];
@@ -86,7 +88,7 @@ pub async fn start_modifying(
 ///
 /// ```
 /// use tokio::net::TcpStream;
-/// use my_proxy::handle_client;
+/// use yprox::handle_client;
 ///
 /// async fn run() {
 ///     let client = TcpStream::connect("127.0.0.1:8080").await.unwrap();
@@ -171,7 +173,7 @@ async fn handle_client(
 /// ```
 /// use tokio::net::TcpStream;
 /// use tokio::sync::{mpsc, Mutex, Arc};
-/// use my_proxy::proxy_modifying;
+/// use yprox::proxy;
 ///
 /// async fn run() {
 ///     let stream = TcpStream::connect("127.0.0.1:8080").await.unwrap();
@@ -184,7 +186,7 @@ async fn handle_client(
 ///         // Modify data here
 ///         data
 ///     };
-///     proxy_modifying(stream, tx, rx, direction, Some(modify_fn)).await.unwrap();
+///     proxy(stream, tx, rx, direction, Some(modify_fn)).await.unwrap();
 /// }
 /// ```
 async fn proxy(
