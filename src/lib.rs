@@ -1,7 +1,8 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use futures::future::try_join_all;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
@@ -26,8 +27,8 @@ use tokio::try_join;
 ///     start(from_addr, to_addrs).await;
 /// }
 /// ```
-pub async fn start(from_addr: impl Into<String>, to_addrs: Vec<String>) {
-    start_modifying(from_addr, to_addrs, None).await;
+pub async fn start(from_addr: SocketAddr, to_addrs: Vec<SocketAddr>) -> io::Result<()> {
+    start_modifying(from_addr, to_addrs, None).await
 }
 
 /// Starts a TCP server that forwards incoming connections to multiple destinations with an optional data modification function.
@@ -59,20 +60,16 @@ pub async fn start(from_addr: impl Into<String>, to_addrs: Vec<String>) {
 /// }
 /// ```
 pub async fn start_modifying(
-    from_addr: impl Into<String>,
-    to_addrs: Vec<String>,
+    from_addr: SocketAddr,
+    to_addrs: Vec<SocketAddr>,
     modify: Option<fn(Vec<u8>) -> Vec<u8>>,
-) {
-    let listener = TcpListener::bind(from_addr.into())
-        .await
-        .expect("Failed to bind listener");
+) -> io::Result<()> {
+    let listener = TcpListener::bind(from_addr).await?;
+    let to_addrs = Arc::from(to_addrs);
 
     loop {
-        let (client, _) = listener
-            .accept()
-            .await
-            .expect("Failed to accept connection");
-        tokio::spawn(handle_client(client, to_addrs.clone(), modify));
+        let (client, _) = listener.accept().await?;
+        tokio::spawn(handle_client(client, Arc::clone(&to_addrs), modify));
     }
 }
 
@@ -102,7 +99,7 @@ pub async fn start_modifying(
 /// ```
 async fn handle_client(
     client: TcpStream,
-    target_addrs: Vec<String>,
+    target_addrs: Arc<[SocketAddr]>,
     modify: Option<fn(Vec<u8>) -> Vec<u8>>,
 ) {
     let mut server_handles: Vec<JoinHandle<_>> = Vec::new();
