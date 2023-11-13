@@ -29,15 +29,15 @@ mod utils;
 /// # Example
 ///
 /// ```
-/// #[tokio::main]
+/// use yprox::start_proxy;
 ///
-/// async fn main() {
-///     let bind_addr = SocketAddr::parse("127.0.0.1:8080");
+/// fn main() {
+///     let bind_addr = "127.0.0.1:8080".parse().unwrap();
 ///     let targets = vec![
-///         ("server1".to_string(), SocketAddr::new("127.0.0.1:8081")),
-///         ("server2".to_string(), SocketAddr::new("127.0.0.1:8082"))
+///         ("server1".to_string(), "127.0.0.1:8081".parse().unwrap()),
+///         ("server2".to_string(), "127.0.0.1:8082".parse().unwrap())
 ///     ];
-///     start_proxy(bind_addr, targets).await;
+///     start_proxy(bind_addr, targets);
 /// }
 /// ```
 pub fn start_proxy(bind_addr: SocketAddr, targets: Vec<(String, SocketAddr)>) -> Result<()> {

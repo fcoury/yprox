@@ -2,64 +2,60 @@
 
 # yprox
 
-A modifying, multiplexer tcp proxy server tool and library.
+`yprox` is a versatile TCP proxy server tool and library, designed to modify and multiplex network traffic. It can be used as a standalone executable or integrated as a library in Rust applications.
 
 ## Usage
 
-### As an executable
+### As an Executable
 
-To use `yprox` as an executable, simply install it using Cargo:
+Install `yprox` using Cargo:
 
 ```sh
 cargo install yprox
 ```
 
-Then, you can run it with:
+To run `yprox`, specify a listening address and one or more target addresses:
 
 ```sh
-yprox <listen_addr> <target1>...<targetN>
+yprox <listen_addr> <target1> ... <targetN>
 ```
 
-For example:
+For example, to start a proxy server that listens on `127.0.0.1:8080` and forwards connections to `127.0.0.1:9000` and `127.0.0.1:9001`:
 
 ```sh
 yprox 127.0.0.1:8080 127.0.0.1:9000 127.0.0.1:9001
 ```
 
-This will start a proxy server that listens on 127.0.0.1:8080 and forwards incoming connections to 127.0.0.1:9000 and 127.0.0.1:9001.
-
-You can also optionally name each target using a `key=value` format:
+Optionally, name each target using the `key=value` format for easier log identification:
 
 ```sh
 yprox 127.0.0.1:8080 qa=127.0.0.1:9000 test=127.0.0.1:9001 
 ```
 
-This way the logs will be using `qa` and `test` to identify the streams going to or coming from those targets. If you don't provide a name, a default one will be provided with the format `targetN`.
+Unnamed targets will receive default names in the format `targetN`.
 
-### As a library
+### As a Library
 
-To use yprox as a library, add it to your Cargo.toml file:
+Add `yprox` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-yprox = "0.1"
+yprox = "0.2.1"
 ```
 
-Then, you can use it in your code:
+Then, use `yprox` in your Rust application:
 
 ```rust
 use yprox::start_proxy;
 
-#[tokio::main]
-
-async fn main() {
-    let bind_addr = SocketAddr::parse("127.0.0.1:8080");
+fn main() {
+    let bind_addr = "127.0.0.1:8080".parse().unwrap();
     let targets = vec![
-        ("server1".to_string(), SocketAddr::new("127.0.0.1:8081")),
-        ("server2".to_string(), SocketAddr::new("127.0.0.1:8082"))
+        ("server1".to_string(), "127.0.0.1:8081".parse().unwrap()),
+        ("server2".to_string(), "127.0.0.1:8082".parse().unwrap())
     ];
-    start_proxy(bind_addr, targets).await;
+    start_proxy(bind_addr, targets);
 }
 ```
 
-This will start a proxy server that listens on 127.0.0.1:8080 and forwards incoming connections to 127.0.0.1:9000 and 127.0.0.1:9001.
+This will start a proxy server that listens on `127.0.0.1:8080` and forwards incoming connections to `127.0.0.1:9000` and `127.0.0.1:9001`.
