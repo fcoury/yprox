@@ -37,7 +37,7 @@ mod utils;
 ///         ("server1".to_string(), SocketAddr::new("127.0.0.1:8081")),
 ///         ("server2".to_string(), SocketAddr::new("127.0.0.1:8082"))
 ///     ];
-///     start(bind_addr, targets).await;
+///     start_proxy(bind_addr, targets).await;
 /// }
 /// ```
 pub fn start_proxy(bind_addr: SocketAddr, targets: Vec<(String, SocketAddr)>) -> Result<()> {
