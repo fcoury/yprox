@@ -27,8 +27,12 @@ use tokio::try_join;
 ///     start(from_addr, to_addrs).await;
 /// }
 /// ```
-pub async fn start(from_addr: SocketAddr, to_addrs: Vec<SocketAddr>) -> io::Result<()> {
-    start_modifying(from_addr, to_addrs, None).await
+pub async fn start(
+    from_addr: SocketAddr,
+    active_to_addr: SocketAddr,
+    passive_to_addrs: Vec<SocketAddr>,
+) -> io::Result<()> {
+    start_modifying(from_addr, active_to_addr, passive_to_addrs, None).await
 }
 
 /// Starts a TCP server that forwards incoming connections to multiple destinations with an optional data modification function.
@@ -61,15 +65,21 @@ pub async fn start(from_addr: SocketAddr, to_addrs: Vec<SocketAddr>) -> io::Resu
 /// ```
 pub async fn start_modifying(
     from_addr: SocketAddr,
-    to_addrs: Vec<SocketAddr>,
+    active_to_addr: SocketAddr,
+    passive_to_addrs: Vec<SocketAddr>,
     modify: Option<fn(Vec<u8>) -> Vec<u8>>,
 ) -> io::Result<()> {
     let listener = TcpListener::bind(from_addr).await?;
-    let to_addrs = Arc::from(to_addrs);
+    let passive_to_addrs = Arc::from(passive_to_addrs);
 
     loop {
         let (client, _) = listener.accept().await?;
-        tokio::spawn(handle_client(client, Arc::clone(&to_addrs), modify));
+        tokio::spawn(handle_client(
+            client,
+            active_to_addr,
+            Arc::clone(&passive_to_addrs),
+            modify,
+        ));
     }
 }
 
@@ -99,14 +109,15 @@ pub async fn start_modifying(
 /// ```
 async fn handle_client(
     client: TcpStream,
-    target_addrs: Arc<[SocketAddr]>,
+    active_to_addr: SocketAddr,
+    passive_to_addrs: Arc<[SocketAddr]>,
     modify: Option<fn(Vec<u8>) -> Vec<u8>>,
 ) {
     let mut server_handles: Vec<JoinHandle<_>> = Vec::new();
     let mut client_to_server_handles: Vec<JoinHandle<_>> = Vec::new();
     let client = Arc::new(Mutex::new(client));
 
-    for (n, target_addr) in target_addrs.iter().enumerate() {
+    for (n, target_addr) in passive_to_addrs.iter().enumerate() {
         let server = match TcpStream::connect(&target_addr).await {
             Ok(s) => s,
             Err(e) => {
