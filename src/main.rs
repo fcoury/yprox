@@ -1,28 +1,23 @@
-use std::net::SocketAddr;
-
 use clap::Parser;
-use tokio::io;
-use yprox::start;
+use cli::Args;
+use yprox::{start_proxy, Result};
 
-#[derive(Parser)]
-struct Cli {
-    /// The address to listen on
-    from_addr: SocketAddr,
+mod cli;
 
-    /// The address that replies
-    active_to_addr: SocketAddr,
+fn main() -> Result<()> {
+    let args = Args::parse();
+    let mut targets = vec![args.main_target_addr];
+    targets.extend(args.secondary_target_addrs);
 
-    /// The addresses that only listen
-    passive_to_addr: Vec<SocketAddr>,
-}
+    let targets = targets
+        .into_iter()
+        .enumerate()
+        .map(|(i, target)| match target {
+            cli::Target::Anon(addr) => Ok((format!("target_{i}"), addr)),
+            cli::Target::Named(name, addr) => Ok((name, addr)),
+        })
+        .collect::<Result<Vec<_>>>()?;
 
-#[tokio::main]
-async fn main() -> io::Result<()> {
-    let args = Cli::parse();
-
-    println!(
-        "Listening on {} -> {} + {:?}",
-        args.from_addr, args.active_to_addr, args.passive_to_addr
-    );
-    start(args.from_addr, args.active_to_addr, args.passive_to_addr).await
+    start_proxy(args.listen_addr, targets)?;
+    Ok(())
 }
