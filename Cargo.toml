@@ -1,13 +1,11 @@
 [package]
 name = "yprox"
 description = "A modifying, multiplexer tcp proxy server tool and library."
-version = "0.1.1"
-authors = ["Felipe Coury <felipe.coury@gmail.com>"]
+version = "0.2.0"
+authors = ["Felipe Coury <felipe.coury@gmail.com>", "mo8bit"]
 edition = "2021"
 license = "MIT"
+repository = "https://github.com/fcoury/yprox"
 
 [dependencies]
-# TODO: Remove the `sync` feature after using crossbeam
-tokio = { version = "1.34.0", features = ["io-util", "net", "sync", "rt-multi-thread", "macros"] }
 clap = { version = "4.4.8", features = ["derive"] }
-futures = "0.3.29"
