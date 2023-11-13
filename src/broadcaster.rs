@@ -61,7 +61,7 @@ impl Broadcaster {
         let connections: Result<Vec<_>> = targets
             .into_iter()
             .map(|(name, target)| {
-                let conn = TcpStream::connect(target.clone())
+                let conn = TcpStream::connect(target)
                     .map_err(|cause| Error::ConnectionError { target, cause });
                 match conn {
                     Ok(stream) => {
