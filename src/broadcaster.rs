@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     error::{Error, Result},
-    server::Message,
+    server::{HookDirection, HookFn, Message},
     target::Target,
 };
 
@@ -15,6 +15,7 @@ pub fn broadcaster(
     targets: Vec<(String, SocketAddr)>,
     receive_broadcast: mpsc::Receiver<Box<[u8]>>,
     send_message: mpsc::Sender<Message>,
+    hooks: Vec<HookFn>,
 ) -> Result<()> {
     let mut broadcaster = Broadcaster::new(targets, &send_message)?;
 
@@ -28,7 +29,7 @@ pub fn broadcaster(
 
     loop {
         let bytes = receive_broadcast.recv()?;
-        broadcaster.new_broadcast(&bytes)?;
+        broadcaster.new_broadcast(bytes, &hooks)?;
     }
 }
 
@@ -106,12 +107,22 @@ impl Broadcaster {
         Ok(Self { targets })
     }
 
-    fn new_broadcast(&mut self, bytes: &[u8]) -> Result<()> {
+    fn new_broadcast(&mut self, bytes: Box<[u8]>, hooks: &[HookFn]) -> Result<()> {
         for target in &self.targets {
             let stream = target.stream.clone();
-            let bytes = bytes.to_vec();
+            let mut new_bytes = bytes.clone();
+            for trigger_fn in hooks {
+                let result = (trigger_fn)(
+                    HookDirection::ClientToTarget,
+                    target.name.clone(),
+                    new_bytes.clone(),
+                );
+                if let Some(result) = result {
+                    new_bytes = result;
+                }
+            }
             // TODO handle result below
-            _ = stream.as_ref().write_all(&bytes);
+            _ = stream.as_ref().write_all(&new_bytes);
         }
 
         Ok(())

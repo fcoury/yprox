@@ -7,8 +7,7 @@ use std::{
 use broadcaster::broadcaster;
 use client::client;
 use error::Result;
-use server::server;
-use server::Hook;
+use server::{server, HookFn};
 
 pub mod broadcaster;
 pub mod cli;
@@ -46,7 +45,7 @@ pub fn start_proxy(bind_addr: SocketAddr, targets: Vec<(String, SocketAddr)>) ->
 pub fn start_proxy_with_hooks(
     bind_addr: SocketAddr,
     targets: Vec<(String, SocketAddr)>,
-    hooks: Vec<Hook>,
+    hooks: Vec<HookFn>,
 ) -> Result<()> {
     let listener = TcpListener::bind(bind_addr)?;
 
@@ -66,7 +65,7 @@ pub fn start_proxy_with_hooks(
     // responses to the server
     let send_message_clone = send_message.clone();
     thread::spawn(|| {
-        broadcaster(targets, receive_broadcast, send_message_clone)
+        broadcaster(targets, receive_broadcast, send_message_clone, hooks)
             .map_err(|err| eprintln!("{:?}", err))
     });
 

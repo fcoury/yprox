@@ -7,31 +7,47 @@ use std::{
 
 use crate::{client::Client, utils::hex_dump, Result};
 
-pub type HookFn = Box<dyn Fn(String, Box<[u8]>) -> Option<Box<[u8]>> + Sync + Send>;
+pub type HookFn = Box<dyn Fn(HookDirection, String, Box<[u8]>) -> Option<Box<[u8]>> + Sync + Send>;
 
 pub struct Hook {
-    pub typ: HookType,
+    pub typ: HookDirection,
     pub trigger_fn: HookFn,
 }
 
 impl Hook {
-    pub fn new(typ: HookType, trigger_fn: HookFn) -> Self {
+    pub fn new(typ: HookDirection, trigger_fn: HookFn) -> Self {
         Self { typ, trigger_fn }
     }
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum HookType {
+pub enum HookDirection {
     #[default]
-    Both,
     ClientToTarget,
     TargetToClient,
+}
+impl HookDirection {
+    pub fn from_client(&self) -> bool {
+        matches!(self, Self::ClientToTarget)
+    }
+
+    pub fn from_target(&self) -> bool {
+        matches!(self, Self::TargetToClient)
+    }
+
+    pub fn to_client(&self) -> bool {
+        matches!(self, Self::TargetToClient)
+    }
+
+    pub fn to_target(&self) -> bool {
+        matches!(self, Self::ClientToTarget)
+    }
 }
 
 pub fn server(
     receive_message: mpsc::Receiver<Message>,
     send_broadcast: mpsc::Sender<Box<[u8]>>,
-    hooks: Vec<Hook>,
+    hooks: Vec<HookFn>,
 ) -> Result<()> {
     let mut server = Server::new();
 
@@ -57,16 +73,14 @@ pub fn server(
                 send_broadcast.send(bytes)?;
             }
             Message::NewTargetMessage { name, addr, bytes } => {
-                let target_hooks = hooks
-                    .iter()
-                    .filter(|h| h.typ == HookType::TargetToClient || h.typ == HookType::Both)
-                    .collect::<Vec<_>>();
                 let bytes = if hooks.is_empty() {
                     bytes
                 } else {
                     let mut bytes = bytes;
-                    for hook in target_hooks {
-                        if let Some(new_bytes) = (hook.trigger_fn)(name.clone(), bytes.clone()) {
+                    for trigger_fn in hooks {
+                        if let Some(new_bytes) =
+                            (trigger_fn)(HookDirection::TargetToClient, name.clone(), bytes.clone())
+                        {
                             bytes = new_bytes;
                         }
                     }
