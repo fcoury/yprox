@@ -5,7 +5,11 @@ use std::{
     thread,
 };
 
-use crate::{Error, Message, Result, Target};
+use crate::{
+    error::{Error, Result},
+    server::Message,
+    target::Target,
+};
 
 pub fn broadcaster(
     targets: Vec<(String, SocketAddr)>,
