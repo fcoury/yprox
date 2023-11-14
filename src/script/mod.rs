@@ -17,12 +17,6 @@ pub struct ExecResponse {
     pub data: Option<Box<[u8]>>,
 }
 
-// impl ExecResponse {
-//     fn with_data(data: Box<[u8]>) -> Self {
-//         Self { data: Some(data) }
-//     }
-// }
-
 pub fn exec_worker(
     receive_exec_request: mpsc::Receiver<ExecRequest>,
     send_exec_response: mpsc::Sender<Result<ExecResponse>>,
