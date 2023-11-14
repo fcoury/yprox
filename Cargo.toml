@@ -9,4 +9,4 @@ repository = "https://github.com/fcoury/yprox"
 
 [dependencies]
 clap = { version = "4.4.8", features = ["derive"] }
-mlua = { version = "0.9.1", features = ["lua54", "send"] }
+rhai = "1.16.3"

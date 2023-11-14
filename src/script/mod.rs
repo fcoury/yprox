@@ -1,6 +1,6 @@
 use std::sync::mpsc;
 
-use mlua::{Function, Lua, Table};
+use rhai::{Array, Dynamic, Engine, Scope};
 
 use self::error::Result;
 
@@ -17,42 +17,49 @@ pub struct ExecResponse {
     pub data: Option<Box<[u8]>>,
 }
 
-impl ExecResponse {
-    fn with_data(data: Box<[u8]>) -> Self {
-        Self { data: Some(data) }
-    }
-}
+// impl ExecResponse {
+//     fn with_data(data: Box<[u8]>) -> Self {
+//         Self { data: Some(data) }
+//     }
+// }
 
 pub fn exec_worker(
     receive_exec_request: mpsc::Receiver<ExecRequest>,
     send_exec_response: mpsc::Sender<Result<ExecResponse>>,
 ) {
-    let lua = Lua::new();
+    let engine = Engine::new();
+
     for message in receive_exec_request {
-        let response = eval(&lua, message.script, message.target, message.data);
+        let mut scope = Scope::new();
+        let data = message
+            .data
+            .into_iter()
+            .map(|x| Dynamic::from(x.clone() as i64))
+            .collect::<Array>();
+
+        scope.push("target", message.target.clone());
+        scope.push("data", data);
+
+        let response = engine
+            .eval_with_scope::<Array>(&mut scope, &message.script)
+            .map(|data| {
+                println!("Script result: {:?}", data);
+                data.into_iter()
+                    .map(|x| x.as_int().unwrap() as u8)
+                    .collect::<Vec<_>>()
+            })
+            .map(|data| ExecResponse {
+                data: Some(data.into_boxed_slice()),
+            })
+            .map_err(|err| {
+                eprintln!("Error running script: {:?}", err);
+                error::Error::ScriptError {
+                    target: message.target,
+                    cause: err.to_string(),
+                }
+            });
         send_exec_response
             .send(response)
             .expect("send_exec_response");
     }
-}
-
-fn eval(lua: &Lua, script: String, target: String, data: Box<[u8]>) -> Result<ExecResponse> {
-    println!("script: {}", script);
-    let handler: Function = lua.load(&script).eval()?;
-    let data_table: Table = lua.create_table()?;
-    for (i, byte) in data.iter().enumerate() {
-        data_table.set(i + 1, *byte)?;
-    }
-    let result = handler.call::<_, mlua::Value>((target.clone(), data_table))?;
-
-    Ok(match result {
-        mlua::Value::String(s) => ExecResponse::with_data(s.as_bytes().to_vec().into_boxed_slice()),
-        mlua::Value::Nil => ExecResponse::default(),
-        result => {
-            return Err(error::Error::InvalidScriptResult {
-                target,
-                result: result.to_string()?,
-            })
-        }
-    })
 }
