@@ -1,6 +1,7 @@
 use std::sync::mpsc;
 
-use rhai::{Array, Dynamic, Engine, Scope};
+use rhai::{packages::Package, Dynamic, Engine, Scope};
+use rhai_fs::FilesystemPackage;
 
 use self::error::Result;
 
@@ -21,7 +22,10 @@ pub fn exec_worker(
     receive_exec_request: mpsc::Receiver<ExecRequest>,
     send_exec_response: mpsc::Sender<Result<ExecResponse>>,
 ) {
-    let engine = Engine::new();
+    let mut engine = Engine::new();
+
+    let package = FilesystemPackage::new();
+    package.register_into_engine(&mut engine);
 
     for message in receive_exec_request {
         let mut scope = Scope::new();
