@@ -23,7 +23,7 @@ impl Direction {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Request {
     pub direction: Direction,
     pub target_name: String,
@@ -40,6 +40,7 @@ impl Request {
     }
 }
 
+#[derive(Debug)]
 pub struct Response {
     pub data: Box<[u8]>,
 }

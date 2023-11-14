@@ -1,3 +1,9 @@
+let triggered_by = switch trigger {
+    "client" => trigger,
+    "target" => `target ${target}`,
+};
+print(`message triggered by ${triggered_by}`);
+
 if target == "target2" {
     let file = open_file("/tmp/target2.log", "a");
     file.write("let data = [");

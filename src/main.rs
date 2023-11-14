@@ -8,7 +8,7 @@ use clap::Parser;
 use cli::Args;
 use script::exec_worker;
 
-use yprox::hooks::{Request, Response};
+use yprox::hooks::{Hook, Request, Response};
 pub use yprox::{error::Result, start_proxy, start_proxy_with_hooks};
 
 use crate::script::ExecRequest;
@@ -41,6 +41,7 @@ fn main() -> Result<()> {
 
             let script = fs::read_to_string(script)?;
             let receive_exec_response = Arc::new(Mutex::new(receive_exec_response));
+
             let exec_fn = Box::new(move |request: Request| {
                 send_exec_request
                     .send(ExecRequest {
@@ -61,7 +62,9 @@ fn main() -> Result<()> {
                 Ok(response)
             });
 
-            start_proxy_with_hooks(args.listen_addr, targets, vec![exec_fn])?
+            let hooks = vec![Hook::builder(exec_fn).build()];
+
+            start_proxy_with_hooks(args.listen_addr, targets, hooks)?
         }
         None => start_proxy(args.listen_addr, targets)?,
     }

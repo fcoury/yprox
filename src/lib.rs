@@ -7,7 +7,7 @@ use std::{
 use broadcaster::broadcaster;
 use client::client;
 use error::Result;
-use hooks::{start_hook_executor, HookFn, Request, Response};
+use hooks::{start_hook_executor, Hook, Request, Response};
 use server::server;
 
 pub mod broadcaster;
@@ -47,9 +47,8 @@ pub fn start_proxy(bind_addr: SocketAddr, targets: Vec<(String, SocketAddr)>) ->
 pub fn start_proxy_with_hooks(
     bind_addr: SocketAddr,
     targets: Vec<(String, SocketAddr)>,
-    hooks: Vec<HookFn>,
+    hooks: Vec<Hook>,
 ) -> Result<()> {
-    let hooks = Arc::new(Mutex::new(hooks));
     let listener = TcpListener::bind(bind_addr)?;
 
     // used to send messages to the server
@@ -57,6 +56,9 @@ pub fn start_proxy_with_hooks(
 
     // used to send broadcasts to all targets
     let (send_broadcast, receive_broadcast) = mpsc::channel();
+
+    // hooks
+    let hooks = Arc::new(Mutex::new(hooks));
 
     // used to send requests to the hook executor from the server context
     let (server_request_sender, server_request_receiver) = mpsc::channel::<Request>();
