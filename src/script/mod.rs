@@ -2,6 +2,7 @@ use std::sync::mpsc;
 
 use rhai::{packages::Package, Dynamic, Engine, Scope};
 use rhai_fs::FilesystemPackage;
+use yprox::server::HookDirection;
 
 use self::error::Result;
 
@@ -9,6 +10,7 @@ pub mod error;
 
 pub struct ExecRequest {
     pub script: String,
+    pub direction: HookDirection,
     pub target: String,
     pub data: Box<[u8]>,
 }
@@ -31,6 +33,15 @@ pub fn exec_worker(
         let mut scope = Scope::new();
         let data = message.data.into_vec();
 
+        scope.push("direction", message.direction);
+        scope.push(
+            "trigger",
+            if message.direction.from_client() {
+                "client"
+            } else {
+                "target"
+            },
+        );
         scope.push("target", message.target.clone());
         scope.push("data", data);
 
