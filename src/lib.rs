@@ -6,18 +6,17 @@ use std::{
 
 use broadcaster::broadcaster;
 use client::client;
-pub use error::{Error, Result};
+use error::Result;
 use server::server;
-pub use server::Message;
-use target::Target;
+use server::Hook;
 
-mod broadcaster;
-mod cli;
-mod client;
-mod error;
-mod server;
-mod target;
-mod utils;
+pub mod broadcaster;
+pub mod cli;
+pub mod client;
+pub mod error;
+pub mod server;
+pub mod target;
+pub mod utils;
 
 /// Starts a TCP server that forwards incoming connections to multiple destinations.
 ///
@@ -41,6 +40,14 @@ mod utils;
 /// }
 /// ```
 pub fn start_proxy(bind_addr: SocketAddr, targets: Vec<(String, SocketAddr)>) -> Result<()> {
+    start_proxy_with_hooks(bind_addr, targets, vec![])
+}
+
+pub fn start_proxy_with_hooks(
+    bind_addr: SocketAddr,
+    targets: Vec<(String, SocketAddr)>,
+    hooks: Vec<Hook>,
+) -> Result<()> {
     let listener = TcpListener::bind(bind_addr)?;
 
     // used to send messages to the server
@@ -51,7 +58,7 @@ pub fn start_proxy(bind_addr: SocketAddr, targets: Vec<(String, SocketAddr)>) ->
 
     // spawn the server thread (handles server -> client and server -> broadcast)
     // handles messages between client and server, and sends broadcasts
-    thread::spawn(|| server(receive_message, send_broadcast));
+    thread::spawn(|| server(receive_message, send_broadcast, hooks));
 
     // spawn the broadcasting thread (handles server -> targets and targets -> server)
     // the breadcaster receives broadcast requests and sends them to all targets

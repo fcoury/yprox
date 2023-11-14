@@ -1,8 +1,23 @@
+use std::{
+    fs,
+    sync::{mpsc, Arc, Mutex},
+    thread,
+};
+
 use clap::Parser;
 use cli::Args;
-use yprox::{start_proxy, Result};
+use script::exec_worker;
+
+pub use yprox::{
+    error::Result,
+    server::{Hook, HookType},
+    start_proxy, start_proxy_with_hooks,
+};
+
+use crate::script::ExecRequest;
 
 mod cli;
+mod script;
 
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -18,6 +33,36 @@ fn main() -> Result<()> {
         })
         .collect::<Result<Vec<_>>>()?;
 
-    start_proxy(args.listen_addr, targets)?;
+    match args.script {
+        Some(script) => {
+            let (send_exec_request, receive_exec_request) = mpsc::channel();
+            let (send_exec_response, receive_exec_response) = mpsc::channel();
+
+            thread::spawn(move || {
+                exec_worker(receive_exec_request, send_exec_response);
+            });
+
+            println!("Using script: {script:?}");
+            let script = fs::read_to_string(script)?;
+            let receive_exec_response = Arc::new(Mutex::new(receive_exec_response));
+            let exec_fn = Box::new(move |target: String, data: Box<[u8]>| {
+                send_exec_request
+                    .send(ExecRequest {
+                        script: script.clone(),
+                        target,
+                        data,
+                    })
+                    .unwrap();
+                let locked_receive_exec_response = receive_exec_response.lock().unwrap();
+                let result = locked_receive_exec_response.recv().unwrap();
+                result.unwrap().data
+            });
+            let hook = Hook::new(HookType::Both, exec_fn);
+
+            start_proxy_with_hooks(args.listen_addr, targets, vec![hook])?
+        }
+        None => start_proxy(args.listen_addr, targets)?,
+    }
+
     Ok(())
 }

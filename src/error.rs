@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, sync::mpsc};
 
-use crate::Message;
+use crate::server::Message;
 
 #[derive(Debug)]
 pub enum Error {

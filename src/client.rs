@@ -4,7 +4,7 @@ use std::{
     sync::{mpsc, Arc},
 };
 
-use crate::{Message, Result};
+use crate::{error::Result, server::Message};
 
 pub fn client(stream: Arc<TcpStream>, tx: mpsc::Sender<Message>) -> Result<()> {
     let addr = stream.peer_addr()?;

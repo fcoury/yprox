@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, str::FromStr};
+use std::{net::SocketAddr, path::PathBuf, str::FromStr};
 
 use clap::Parser;
 
@@ -15,7 +15,7 @@ pub struct Args {
 
     /// Modifying script
     #[clap(short, long)]
-    pub script: Option<String>,
+    pub script: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
