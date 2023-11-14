@@ -27,6 +27,6 @@ pub fn hex_dump(data: &[u8], direction: &str) {
             })
             .collect();
 
-        println!("{}: {:47}  |{}|", direction, hex.join(" "), ascii);
+        println!("{:20}: {:47}  |{}|", direction, hex.join(" "), ascii);
     }
 }

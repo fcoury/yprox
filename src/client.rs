@@ -19,7 +19,6 @@ pub fn client(stream: Arc<TcpStream>, tx: mpsc::Sender<Message>) -> Result<()> {
         let n = stream.as_ref().read(&mut buffer)?;
         if n > 0 {
             let bytes: Box<[u8]> = buffer[..n].iter().cloned().collect();
-            println!("Request: {}", String::from_utf8_lossy(&bytes));
             tx.send(Message::NewClientMessage { addr, bytes })?;
         } else {
             tx.send(Message::ClientDisconnected { addr })?;
