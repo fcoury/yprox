@@ -28,7 +28,7 @@ fn main() -> Result<()> {
         .into_iter()
         .enumerate()
         .map(|(i, target)| match target {
-            cli::Target::Anon(addr) => Ok((format!("target_{i}"), addr)),
+            cli::Target::Anon(addr) => Ok((format!("target{}", i + 1), addr)),
             cli::Target::Named(name, addr) => Ok((name, addr)),
         })
         .collect::<Result<Vec<_>>>()?;
