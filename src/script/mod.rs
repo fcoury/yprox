@@ -2,7 +2,7 @@ use std::sync::mpsc;
 
 use rhai::{packages::Package, Dynamic, Engine, Scope};
 use rhai_fs::FilesystemPackage;
-use yprox::server::HookDirection;
+use yprox::hooks::Direction;
 
 use self::error::Result;
 
@@ -10,8 +10,8 @@ pub mod error;
 
 pub struct ExecRequest {
     pub script: String,
-    pub direction: HookDirection,
-    pub target: String,
+    pub direction: Direction,
+    pub target_name: String,
     pub data: Box<[u8]>,
 }
 
@@ -42,7 +42,7 @@ pub fn exec_worker(
                 "target"
             },
         );
-        scope.push("target", message.target.clone());
+        scope.push("target", message.target_name.clone());
         scope.push("data", data);
 
         let response = engine
@@ -50,7 +50,7 @@ pub fn exec_worker(
             .map_err(|err| {
                 eprintln!("Error running script: {:?}", err);
                 error::Error::ScriptError {
-                    target: message.target.clone(),
+                    target: message.target_name.clone(),
                     cause: err.to_string(),
                 }
             });
@@ -103,7 +103,7 @@ pub fn exec_worker(
 
         send_exec_response
             .send(Err(error::Error::ScriptError {
-                target: message.target,
+                target: message.target_name,
                 cause: format!("Script returned an invalid value: {response:?}"),
             }))
             .expect("send_exec_response");

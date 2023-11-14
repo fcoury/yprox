@@ -5,49 +5,18 @@ use std::{
     sync::{mpsc, Arc},
 };
 
-use crate::{client::Client, utils::hex_dump, Result};
-
-pub type HookFn = Box<dyn Fn(HookDirection, String, Box<[u8]>) -> Option<Box<[u8]>> + Sync + Send>;
-
-pub struct Hook {
-    pub typ: HookDirection,
-    pub trigger_fn: HookFn,
-}
-
-impl Hook {
-    pub fn new(typ: HookDirection, trigger_fn: HookFn) -> Self {
-        Self { typ, trigger_fn }
-    }
-}
-
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum HookDirection {
-    #[default]
-    ClientToTarget,
-    TargetToClient,
-}
-impl HookDirection {
-    pub fn from_client(&self) -> bool {
-        matches!(self, Self::ClientToTarget)
-    }
-
-    pub fn from_target(&self) -> bool {
-        matches!(self, Self::TargetToClient)
-    }
-
-    pub fn to_client(&self) -> bool {
-        matches!(self, Self::TargetToClient)
-    }
-
-    pub fn to_target(&self) -> bool {
-        matches!(self, Self::ClientToTarget)
-    }
-}
+use crate::{
+    client::Client,
+    hooks::{Direction, Request, Response},
+    utils::hex_dump,
+    Result,
+};
 
 pub fn server(
     receive_message: mpsc::Receiver<Message>,
     send_broadcast: mpsc::Sender<Box<[u8]>>,
-    hooks: Vec<HookFn>,
+    send_hook_request: mpsc::Sender<Request>,
+    recv_hook_response: mpsc::Receiver<Result<Response>>,
 ) -> Result<()> {
     let mut server = Server::new();
 
@@ -73,20 +42,9 @@ pub fn server(
                 send_broadcast.send(bytes)?;
             }
             Message::NewTargetMessage { name, addr, bytes } => {
-                let bytes = if hooks.is_empty() {
-                    bytes
-                } else {
-                    let mut bytes = bytes;
-                    for trigger_fn in hooks {
-                        if let Some(new_bytes) =
-                            (trigger_fn)(HookDirection::TargetToClient, name.clone(), bytes.clone())
-                        {
-                            bytes = new_bytes;
-                        }
-                    }
-                    bytes
-                };
-                server.new_response(name, addr, &bytes);
+                send_hook_request.send(Request::new(Direction::TargetToClient, &name, bytes))?;
+                let response = recv_hook_response.recv()?;
+                server.new_response(name, addr, &response?.data);
             }
         }
     }

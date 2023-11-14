@@ -1,18 +1,20 @@
 use std::{
     net::{SocketAddr, TcpListener},
-    sync::{mpsc, Arc},
+    sync::{mpsc, Arc, Mutex},
     thread,
 };
 
 use broadcaster::broadcaster;
 use client::client;
 use error::Result;
-use server::{server, HookFn};
+use hooks::{start_hook_executor, HookFn, Request, Response};
+use server::server;
 
 pub mod broadcaster;
 pub mod cli;
 pub mod client;
 pub mod error;
+pub mod hooks;
 pub mod server;
 pub mod target;
 pub mod utils;
@@ -47,6 +49,7 @@ pub fn start_proxy_with_hooks(
     targets: Vec<(String, SocketAddr)>,
     hooks: Vec<HookFn>,
 ) -> Result<()> {
+    let hooks = Arc::new(Mutex::new(hooks));
     let listener = TcpListener::bind(bind_addr)?;
 
     // used to send messages to the server
@@ -55,18 +58,53 @@ pub fn start_proxy_with_hooks(
     // used to send broadcasts to all targets
     let (send_broadcast, receive_broadcast) = mpsc::channel();
 
+    // used to send requests to the hook executor from the server context
+    let (server_request_sender, server_request_receiver) = mpsc::channel::<Request>();
+    let (server_response_sender, server_response_receiver) = mpsc::channel::<Result<Response>>();
+    start_hook_executor(
+        hooks.clone(),
+        server_request_receiver,
+        server_response_sender,
+    );
+
+    // used to send requests to the hook executor from the broadcaster context
+    let (broadcaster_request_sender, broadcaster_request_receiver) = mpsc::channel::<Request>();
+    let (broadcaster_response_sender, broadcaster_response_receiver) =
+        mpsc::channel::<Result<Response>>();
+
+    start_hook_executor(
+        hooks,
+        broadcaster_request_receiver,
+        broadcaster_response_sender,
+    );
+
     // spawn the server thread (handles server -> client and server -> broadcast)
     // handles messages between client and server, and sends broadcasts
-    thread::spawn(|| server(receive_message, send_broadcast, hooks));
+    let server_request_sender = server_request_sender.clone();
+    thread::spawn(|| {
+        server(
+            receive_message,
+            send_broadcast,
+            server_request_sender,
+            server_response_receiver,
+        )
+    });
 
     // spawn the broadcasting thread (handles server -> targets and targets -> server)
     // the breadcaster receives broadcast requests and sends them to all targets
     // it also receives the send_message handle so that each target can send individual
     // responses to the server
     let send_message_clone = send_message.clone();
+    let broadcaster_request_sender = broadcaster_request_sender.clone();
     thread::spawn(|| {
-        broadcaster(targets, receive_broadcast, send_message_clone, hooks)
-            .map_err(|err| eprintln!("{:?}", err))
+        broadcaster(
+            targets,
+            receive_broadcast,
+            send_message_clone,
+            broadcaster_request_sender,
+            broadcaster_response_receiver,
+        )
+        .map_err(|err| eprintln!("{:?}", err))
     });
 
     // spawn the client threads (handle client -> server)

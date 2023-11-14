@@ -8,11 +8,8 @@ use clap::Parser;
 use cli::Args;
 use script::exec_worker;
 
-pub use yprox::{
-    error::Result,
-    server::{Hook, HookDirection},
-    start_proxy, start_proxy_with_hooks,
-};
+use yprox::hooks::{Request, Response};
+pub use yprox::{error::Result, start_proxy, start_proxy_with_hooks};
 
 use crate::script::ExecRequest;
 
@@ -44,21 +41,25 @@ fn main() -> Result<()> {
 
             let script = fs::read_to_string(script)?;
             let receive_exec_response = Arc::new(Mutex::new(receive_exec_response));
-            let exec_fn = Box::new(
-                move |direction: HookDirection, target: String, data: Box<[u8]>| {
-                    send_exec_request
-                        .send(ExecRequest {
-                            script: script.clone(),
-                            direction,
-                            target,
-                            data,
-                        })
-                        .unwrap();
-                    let locked_receive_exec_response = receive_exec_response.lock().unwrap();
-                    let result = locked_receive_exec_response.recv().unwrap();
-                    result.unwrap().data
-                },
-            );
+            let exec_fn = Box::new(move |request: Request| {
+                send_exec_request
+                    .send(ExecRequest {
+                        script: script.clone(),
+                        direction: request.direction,
+                        target_name: request.target_name,
+                        data: request.data,
+                    })
+                    .unwrap();
+                let locked_receive_exec_response = receive_exec_response.lock().unwrap();
+                let result = locked_receive_exec_response.recv().unwrap();
+                let data = result.unwrap().data;
+                let response = match data {
+                    Some(data) => Some(Response::new(data)),
+                    None => None,
+                };
+
+                Ok(response)
+            });
 
             start_proxy_with_hooks(args.listen_addr, targets, vec![exec_fn])?
         }
