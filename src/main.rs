@@ -42,7 +42,6 @@ fn main() -> Result<()> {
                 exec_worker(receive_exec_request, send_exec_response);
             });
 
-            println!("Using script: {script:?}");
             let script = fs::read_to_string(script)?;
             let receive_exec_response = Arc::new(Mutex::new(receive_exec_response));
             let exec_fn = Box::new(move |target: String, data: Box<[u8]>| {

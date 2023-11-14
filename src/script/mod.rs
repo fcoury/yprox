@@ -37,7 +37,6 @@ pub fn exec_worker(
         let response = engine
             .eval_with_scope::<Array>(&mut scope, &message.script)
             .map(|data| {
-                println!("Script result: {:?}", data);
                 data.into_iter()
                     .map(|x| x.as_int().unwrap() as u8)
                     .collect::<Vec<_>>()
