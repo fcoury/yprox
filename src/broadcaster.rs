@@ -7,7 +7,8 @@ use std::{
 
 use crate::{
     error::{Error, Result},
-    server::{HookDirection, HookFn, Message},
+    hooks::{Direction, Request, Response},
+    server::Message,
     target::Target,
 };
 
@@ -15,7 +16,8 @@ pub fn broadcaster(
     targets: Vec<(String, SocketAddr)>,
     receive_broadcast: mpsc::Receiver<Box<[u8]>>,
     send_message: mpsc::Sender<Message>,
-    hooks: Vec<HookFn>,
+    send_hook_request: mpsc::Sender<Request>,
+    recv_hook_response: mpsc::Receiver<Result<Response>>,
 ) -> Result<()> {
     let mut broadcaster = Broadcaster::new(targets, &send_message)?;
 
@@ -29,7 +31,7 @@ pub fn broadcaster(
 
     loop {
         let bytes = receive_broadcast.recv()?;
-        broadcaster.new_broadcast(bytes, &hooks)?;
+        broadcaster.new_broadcast(bytes, &send_hook_request, &recv_hook_response)?;
     }
 }
 
@@ -107,22 +109,22 @@ impl Broadcaster {
         Ok(Self { targets })
     }
 
-    fn new_broadcast(&mut self, bytes: Box<[u8]>, hooks: &[HookFn]) -> Result<()> {
+    fn new_broadcast(
+        &mut self,
+        bytes: Box<[u8]>,
+        send_hook_request: &mpsc::Sender<Request>,
+        recv_hook_response: &mpsc::Receiver<Result<Response>>,
+    ) -> Result<()> {
         for target in &self.targets {
             let stream = target.stream.clone();
-            let mut new_bytes = bytes.clone();
-            for trigger_fn in hooks {
-                let result = (trigger_fn)(
-                    HookDirection::ClientToTarget,
-                    target.name.clone(),
-                    new_bytes.clone(),
-                );
-                if let Some(result) = result {
-                    new_bytes = result;
-                }
-            }
+            send_hook_request.send(Request::new(
+                Direction::ClientToTarget,
+                target.name.clone(),
+                bytes.clone(),
+            ))?;
+            let response = recv_hook_response.recv()?;
             // TODO handle result below
-            _ = stream.as_ref().write_all(&new_bytes);
+            _ = stream.as_ref().write_all(&response?.data);
         }
 
         Ok(())
