@@ -49,6 +49,9 @@ pub fn server(
             Message::TargetDisconnected { name, addr } => {
                 server.target_disconnected(name, addr);
             }
+            Message::TargetReconnected { name, addr } => {
+                server.target_reconnected(name, addr);
+            }
             Message::NewClientMessage { addr, bytes } => {
                 server.new_message(addr, &bytes);
                 send_broadcast.send(bytes)?;
@@ -102,6 +105,10 @@ impl Server {
         println!("Target {} connected: {}", name, addr);
     }
 
+    fn target_reconnected(&mut self, name: String, addr: SocketAddr) {
+        println!("Target {} reconnected: {}", name, addr);
+    }
+
     fn target_disconnected(&mut self, name: String, addr: SocketAddr) {
         println!("Target {} disconnected: {}", name, addr);
     }
@@ -143,5 +150,9 @@ pub enum Message {
         name: String,
         addr: SocketAddr,
         bytes: Box<[u8]>,
+    },
+    TargetReconnected {
+        name: String,
+        addr: SocketAddr,
     },
 }

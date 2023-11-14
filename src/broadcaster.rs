@@ -33,6 +33,7 @@ pub fn broadcaster(
 }
 
 fn target(name: String, stream: Arc<TcpStream>, send_message: mpsc::Sender<Message>) -> Result<()> {
+    let mut stream = stream.clone();
     let addr = stream.peer_addr()?;
     let mut buffer = [0; 1024];
     loop {
@@ -45,12 +46,26 @@ fn target(name: String, stream: Arc<TcpStream>, send_message: mpsc::Sender<Messa
                 bytes,
             })?;
         } else {
-            send_message.send(Message::TargetDisconnected { name, addr })?;
-            break;
+            send_message.send(Message::TargetDisconnected {
+                name: name.clone(),
+                addr,
+            })?;
+            loop {
+                thread::sleep(std::time::Duration::from_secs(1));
+                match TcpStream::connect(addr) {
+                    Ok(new_stream) => {
+                        send_message.send(Message::TargetReconnected {
+                            name: name.clone(),
+                            addr: new_stream.peer_addr()?,
+                        })?;
+                        stream = Arc::new(new_stream);
+                        break;
+                    }
+                    Err(_) => {}
+                }
+            }
         }
     }
-
-    Ok(())
 }
 
 struct Broadcaster {
