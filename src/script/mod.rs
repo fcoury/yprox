@@ -29,34 +29,72 @@ pub fn exec_worker(
 
     for message in receive_exec_request {
         let mut scope = Scope::new();
-        let data = message
-            .data
-            .into_iter()
-            .map(|x| Dynamic::from(x.clone() as i64))
-            .collect::<Array>();
+        let data = message.data.into_vec();
 
         scope.push("target", message.target.clone());
         scope.push("data", data);
 
         let response = engine
-            .eval_with_scope::<Array>(&mut scope, &message.script)
-            .map(|data| {
-                data.into_iter()
-                    .map(|x| x.as_int().unwrap() as u8)
-                    .collect::<Vec<_>>()
-            })
-            .map(|data| ExecResponse {
-                data: Some(data.into_boxed_slice()),
-            })
+            .eval_with_scope::<Dynamic>(&mut scope, &message.script)
             .map_err(|err| {
                 eprintln!("Error running script: {:?}", err);
                 error::Error::ScriptError {
-                    target: message.target,
+                    target: message.target.clone(),
                     cause: err.to_string(),
                 }
             });
+
+        let Ok(response) = response else {
+            send_exec_response
+                .send(Err(response.unwrap_err()))
+                .expect("send_exec_response");
+            continue;
+        };
+
+        if response.is_blob() {
+            let data = response.into_blob().expect("is blob");
+            send_exec_response
+                .send(Ok(ExecResponse {
+                    data: Some(data.into_boxed_slice()),
+                }))
+                .expect("send_exec_response");
+            continue;
+        }
+
+        if response.is_array() {
+            let data = response.into_array().expect("is array");
+            let data = data
+                .into_iter()
+                .map(|x| x.as_int().unwrap() as u8)
+                .collect::<Vec<_>>()
+                .into_boxed_slice();
+            send_exec_response
+                .send(Ok(ExecResponse { data: Some(data) }))
+                .expect("send_exec_response");
+            continue;
+        }
+
+        if response.is_string() {
+            let data = response.into_string().expect("is string");
+            let data = data.into_bytes().into_boxed_slice();
+            send_exec_response
+                .send(Ok(ExecResponse { data: Some(data) }))
+                .expect("send_exec_response");
+            continue;
+        }
+
+        if response.is::<()>() {
+            send_exec_response
+                .send(Ok(ExecResponse { data: None }))
+                .expect("send_exec_response");
+            continue;
+        }
+
         send_exec_response
-            .send(response)
+            .send(Err(error::Error::ScriptError {
+                target: message.target,
+                cause: format!("Script returned an invalid value: {response:?}"),
+            }))
             .expect("send_exec_response");
     }
 }
