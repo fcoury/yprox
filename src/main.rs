@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     fs,
-    path::{Path, PathBuf},
+    path::{PathBuf},
     sync::{mpsc, Arc, Mutex},
     thread,
 };
@@ -121,10 +121,7 @@ fn main() -> Result<()> {
             let locked_receive_exec_response = receive_exec_response.lock().unwrap();
             let result = locked_receive_exec_response.recv().unwrap();
             let data = result.unwrap().data;
-            let response = match data {
-                Some(data) => Some(Response::new(data)),
-                None => None,
-            };
+            let response = data.map(Response::new);
 
             Ok(response)
         });

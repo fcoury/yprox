@@ -31,14 +31,12 @@ pub mod utils;
 /// ```
 /// use yprox::start_proxy;
 ///
-/// fn main() {
-///     let bind_addr = "127.0.0.1:8080".parse().unwrap();
-///     let targets = vec![
-///         ("server1".to_string(), "127.0.0.1:8081".parse().unwrap()),
-///         ("server2".to_string(), "127.0.0.1:8082".parse().unwrap())
-///     ];
-///     start_proxy(bind_addr, targets);
-/// }
+/// let bind_addr = "127.0.0.1:8080".parse().unwrap();
+/// let targets = vec![
+///     ("server1".to_string(), "127.0.0.1:8081".parse().unwrap()),
+///     ("server2".to_string(), "127.0.0.1:8082".parse().unwrap())
+/// ];
+/// start_proxy(bind_addr, targets);
 /// ```
 pub fn start_proxy(bind_addr: SocketAddr, targets: Vec<(String, SocketAddr)>) -> Result<()> {
     start_proxy_with_hooks(bind_addr, targets, vec![])

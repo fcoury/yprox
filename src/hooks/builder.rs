@@ -8,11 +8,11 @@ pub struct HookBuilder {
 
 impl HookBuilder {
     pub fn new(trigger_fn: HookFn) -> Self {
-        return Self {
+        Self {
             direction: None,
             target_name: None,
             trigger_fn,
-        };
+        }
     }
 
     pub fn direction(mut self, direction: Direction) -> Self {

@@ -55,16 +55,13 @@ fn target(name: String, stream: Arc<TcpStream>, send_message: mpsc::Sender<Messa
             })?;
             loop {
                 thread::sleep(std::time::Duration::from_secs(1));
-                match TcpStream::connect(addr) {
-                    Ok(new_stream) => {
-                        send_message.send(Message::TargetReconnected {
-                            name: name.clone(),
-                            addr: new_stream.peer_addr()?,
-                        })?;
-                        stream = Arc::new(new_stream);
-                        break;
-                    }
-                    Err(_) => {}
+                if let Ok(new_stream) = TcpStream::connect(addr) {
+                    send_message.send(Message::TargetReconnected {
+                        name: name.clone(),
+                        addr: new_stream.peer_addr()?,
+                    })?;
+                    stream = Arc::new(new_stream);
+                    break;
                 }
             }
         }

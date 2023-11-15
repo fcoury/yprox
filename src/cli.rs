@@ -67,14 +67,14 @@ impl Target {
 
     pub fn as_anon(&self) -> Option<SocketAddr> {
         match self {
-            Target::Anon(addr) => Some(addr.clone()),
+            Target::Anon(addr) => Some(*addr),
             _ => None,
         }
     }
 
     pub fn as_named(&self) -> Option<(String, SocketAddr)> {
         match self {
-            Target::Named(key, addr) => Some((key.to_string(), addr.clone())),
+            Target::Named(key, addr) => Some((key.to_string(), *addr)),
             _ => None,
         }
     }
