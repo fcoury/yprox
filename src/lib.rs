@@ -7,7 +7,7 @@ use std::{
 use broadcaster::broadcaster;
 use client::client;
 use error::Result;
-use hooks::{start_hook_executor, Hook, Request, Response};
+use hooks::{hook_executor, Hook, Request, Response};
 use server::server;
 
 pub mod broadcaster;
@@ -63,7 +63,7 @@ pub fn start_proxy_with_hooks(
     // used to send requests to the hook executor from the server context
     let (server_request_sender, server_request_receiver) = mpsc::channel::<Request>();
     let (server_response_sender, server_response_receiver) = mpsc::channel::<Result<Response>>();
-    start_hook_executor(
+    hook_executor(
         hooks.clone(),
         server_request_receiver,
         server_response_sender,
@@ -74,7 +74,7 @@ pub fn start_proxy_with_hooks(
     let (broadcaster_response_sender, broadcaster_response_receiver) =
         mpsc::channel::<Result<Response>>();
 
-    start_hook_executor(
+    hook_executor(
         hooks,
         broadcaster_request_receiver,
         broadcaster_response_sender,

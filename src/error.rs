@@ -13,6 +13,7 @@ pub enum Error {
         target: SocketAddr,
         cause: std::io::Error,
     },
+    UnexpectedError(String),
 }
 
 impl From<std::io::Error> for Error {
@@ -42,6 +43,12 @@ impl From<mpsc::SendError<Box<[u8]>>> for Error {
 impl From<mpsc::SendError<Request>> for Error {
     fn from(err: mpsc::SendError<Request>) -> Self {
         Self::HookExecutionError(err)
+    }
+}
+
+impl From<String> for Error {
+    fn from(err: String) -> Self {
+        Self::UnexpectedError(err)
     }
 }
 

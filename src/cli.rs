@@ -1,27 +1,83 @@
-use std::{net::SocketAddr, path::PathBuf, str::FromStr};
+use std::{collections::HashMap, net::SocketAddr, path::PathBuf, str::FromStr};
 
-use clap::Parser;
+use clap::{ArgGroup, Parser};
+use serde::Deserialize;
 
-#[derive(Parser)]
+#[derive(Debug, Deserialize)]
+pub struct Config {
+    pub listen: SocketAddr,
+    pub targets: ConfigTargets,
+    #[serde(default)]
+    pub scripts: Vec<Script>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum ConfigTargets {
+    Anon(Vec<SocketAddr>),
+    Named(HashMap<String, SocketAddr>),
+}
+
+#[derive(Debug, Deserialize)]
+pub enum Trigger {
+    Client,
+    Target(Option<String>),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Script {
+    pub trigger: Option<Trigger>,
+    pub target: String,
+    pub script: String,
+}
+
+#[derive(Debug, Parser)]
+#[clap(group = ArgGroup::new("config_or_args").required(false))]
 pub struct Args {
     /// The address to listen on
-    pub listen_addr: SocketAddr,
+    #[clap(short, long)]
+    pub listen: Option<SocketAddr>,
 
     /// Main target address
-    pub main_target_addr: Target,
-
-    /// Additional target addresses
-    pub secondary_target_addrs: Vec<Target>,
+    #[clap(long, value_delimiter = ',')]
+    pub targets: Option<Vec<Target>>,
 
     /// Modifying script
     #[clap(short, long)]
     pub script: Option<PathBuf>,
+
+    /// Path to a toml config file
+    pub config: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Deserialize)]
 pub enum Target {
     Anon(SocketAddr),
     Named(String, SocketAddr),
+}
+
+impl Target {
+    pub fn is_anon(&self) -> bool {
+        matches!(self, Target::Anon(_))
+    }
+
+    pub fn is_named(&self) -> bool {
+        matches!(self, Target::Named(_, _))
+    }
+
+    pub fn as_anon(&self) -> Option<SocketAddr> {
+        match self {
+            Target::Anon(addr) => Some(addr.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn as_named(&self) -> Option<(String, SocketAddr)> {
+        match self {
+            Target::Named(key, addr) => Some((key.to_string(), addr.clone())),
+            _ => None,
+        }
+    }
 }
 
 impl FromStr for Target {

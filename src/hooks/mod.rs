@@ -41,7 +41,7 @@ pub struct Header {
     pub direction: Direction,
 }
 
-pub fn start_hook_executor(
+pub fn hook_executor(
     hooks: Arc<Mutex<Vec<Hook>>>,
     request_receiver: mpsc::Receiver<Request>,
     response_sender: mpsc::Sender<Result<Response>>,
@@ -49,7 +49,8 @@ pub fn start_hook_executor(
     std::thread::spawn(move || {
         for request in request_receiver {
             let mut data = request.data.clone();
-            for hook in hooks.lock().unwrap().iter().filter(|h| h.matches(&request)) {
+            let hooks = hooks.lock().unwrap();
+            for hook in hooks.iter().filter(|h| h.matches(&request)) {
                 data = match (hook.trigger_fn)(request.clone()) {
                     Ok(Some(response)) => response.data.clone(),
                     Ok(None) => data,
