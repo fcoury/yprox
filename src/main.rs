@@ -1,89 +1,82 @@
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    sync::{broadcast, mpsc},
+};
 
 #[tokio::main]
-async fn main() {
-    let listener = TcpListener::bind("127.0.0.1:27018").await.unwrap();
-    println!("Server listening on port 27018");
+async fn main() -> anyhow::Result<()> {
+    let addr = "127.0.0.1:27018";
+    let backends = vec!["127.0.0.1:27017".to_string(), "127.0.0.1:27016".to_string()];
+
+    let listener = TcpListener::bind(addr).await?;
 
     loop {
-        let (client_stream, _) = listener.accept().await.unwrap();
+        // accept connection
+        let (socket, _) = listener.accept().await?;
+        // send tcp stream to a task handler
+        let backends = backends.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_client(client_stream).await {
-                println!("Error handling client: {}", e);
-            }
+            handle_client(&backends, socket).await;
         });
     }
 }
 
-async fn handle_client(mut client_stream: TcpStream) -> tokio::io::Result<()> {
-    let mut backend_stream = TcpStream::connect("127.0.0.1:27017").await?;
+async fn handle_client(backends: &[String], socket: TcpStream) {
+    // creates a broadcast channel to send messages from the client
+    let (broadcast_sender, _) = broadcast::channel::<Vec<u8>>(32);
+    // creates a channel to receive responses from each backend
+    let (backend_response_sender, mut backend_response_receiver) = mpsc::channel::<Vec<u8>>(32);
+    let (mut client_receiver, mut client_sender) = socket.into_split();
 
-    let (client_reader, client_writer) = client_stream.split();
-    let (backend_reader, backend_writer) = backend_stream.split();
+    for backend in backends {
+        // connects to each backend
+        let backend_connection = TcpStream::connect(backend).await.unwrap();
+        let (mut backend_receiver, mut backend_sender) = backend_connection.into_split();
 
-    let client_to_backend =
-        log_and_forward_data(client_reader, backend_writer, "Client to Backend");
-    let backend_to_client =
-        log_and_forward_data(backend_reader, client_writer, "Backend to Client");
+        // sender task
+        let broadcast_sender = broadcast_sender.clone();
+        tokio::spawn(async move {
+            loop {
+                let mut broadcast_receiver = broadcast_sender.subscribe();
+                let data = broadcast_receiver.recv().await.unwrap();
+                // sends the broadcast data to this backend
+                backend_sender.write_all(&data).await.unwrap();
+            }
+        });
 
-    tokio::try_join!(client_to_backend, backend_to_client)?;
-
-    Ok(())
-}
-
-async fn log_and_forward_data(
-    mut read_stream: impl AsyncRead + Unpin,
-    mut write_stream: impl AsyncWrite + Unpin,
-    info: &str,
-) -> tokio::io::Result<()> {
-    let mut buffer = [0; 1024];
-
-    loop {
-        let bytes_read = read_stream.read(&mut buffer).await?;
-        if bytes_read == 0 {
-            break;
-        }
-
-        // Log the data
-        hex_dump(&buffer[..bytes_read], info);
-
-        // Write the data
-        write_stream.write_all(&buffer[..bytes_read]).await?;
+        // receiver task
+        let backend_response_sender = backend_response_sender.clone();
+        tokio::spawn(async move {
+            let mut buffer = [0; 1024];
+            loop {
+                let n = backend_receiver.read(&mut buffer).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                let data = buffer[..n].to_vec();
+                // sends the backend response to the client
+                backend_response_sender.send(data).await.unwrap();
+            }
+        });
     }
 
-    Ok(())
-}
+    tokio::spawn(async move {
+        loop {
+            let data = backend_response_receiver.recv().await.unwrap();
+            // sends the backend response to the client
+            client_sender.write_all(&data).await.unwrap();
+        }
+    });
 
-/// Prints a hex dump of the given data with an optional info string.
-///
-/// # Arguments
-///
-/// * `data` - A slice of bytes to be printed as a hex dump.
-/// * `info` - An optional string with info about the data flow.
-///
-/// # Example
-///
-/// ```
-/// let data = [0x48, 0x65, 0x6C, 0x6C, 0x6F];
-/// hex_dump(&data, "OUTGOING");
-/// ```
-pub fn hex_dump(data: &[u8], info: &str) {
-    const WIDTH: usize = 16;
-
-    for chunk in data.chunks(WIDTH) {
-        let hex: Vec<String> = chunk.iter().map(|b| format!("{:02X}", b)).collect();
-        let ascii: String = chunk
-            .iter()
-            .map(|&b| {
-                if (0x20..=0x7e).contains(&b) {
-                    b as char
-                } else {
-                    '.'
-                }
-            })
-            .collect();
-
-        println!("{:20}: {:47}  |{}|", info, hex.join(" "), ascii);
+    let mut buffer = [0; 1024];
+    loop {
+        // receives and broadcasts data from the client
+        let n = client_receiver.read(&mut buffer).await.unwrap();
+        if n == 0 {
+            break;
+        }
+        let data = buffer[..n].to_vec();
+        broadcast_sender.send(data).unwrap();
     }
 }
