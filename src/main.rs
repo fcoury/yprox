@@ -23,13 +23,21 @@ async fn main() -> anyhow::Result<()> {
     let config = if let Some(ref config_file) = args.config {
         // check if config_file exists
         if !config_file.exists() {
-            eprintln!("Config file {:?} does not exist", config_file);
+            eprintln!(
+                "\x1b[31merror:\x1b[0m config file {:?} does not exist",
+                config_file
+            );
             std::process::exit(1);
         }
         println!("Loading config from {:?}", args.config);
         config::load(&config_file)?
     } else {
-        let backends = args.backend.expect("backend is required by clap here");
+        let Some(backends) = args.backend else {
+            eprintln!(
+                "\x1b[31merror:\x1b[0m you need to provide `backend` or `config` attributes when yprox.toml is absent",
+            );
+            std::process::exit(1);
+        };
         let backends = if backends.iter().any(|b| b.contains('=')) {
             config::Backends::Named(
                 backends
