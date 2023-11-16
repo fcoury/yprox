@@ -24,13 +24,13 @@ impl Direction {
 }
 
 #[derive(Debug, Clone)]
-pub struct Request {
+pub struct HookRequest {
     pub direction: Direction,
     pub target_name: String,
     pub data: Box<[u8]>,
 }
 
-impl Request {
+impl HookRequest {
     pub fn new(direction: Direction, target_name: impl Into<String>, data: Box<[u8]>) -> Self {
         Self {
             direction,
@@ -41,11 +41,11 @@ impl Request {
 }
 
 #[derive(Debug)]
-pub struct Response {
+pub struct HookResponse {
     pub data: Box<[u8]>,
 }
 
-impl Response {
+impl HookResponse {
     pub fn new(data: Box<[u8]>) -> Self {
         Self { data }
     }

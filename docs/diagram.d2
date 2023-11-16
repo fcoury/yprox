@@ -1,0 +1,32 @@
+Client 1 <-> server.Client 1 Socket
+Client 2 <-> server.Client 2 Socket
+server: Server {
+  Client 1 Socket <-> C1T1 Socket
+  Client 1 Socket -> C1T2 Socket
+  Client 1 Socket -> C1T3 Socket
+
+  C1T1 Socket
+  C1T2 Socket
+  C1T3 Socket
+
+  Client 2 Socket <-> C2T1 Socket
+  Client 2 Socket -> C2T2 Socket
+  Client 2 Socket -> C2T3 Socket
+
+  C2T1 Socket
+  C2T2 Socket
+  C2T3 Socket
+}
+server.C1T1 Socket <-> Target 1\*
+server.C1T2 Socket -> Target 2
+server.C1T3 Socket -> Target 3
+
+server.C2T1 Socket <-> Target 1\*
+server.C2T2 Socket -> Target 2
+server.C2T3 Socket -> Target 3
+
+note: |md
+  * target 1 is the selected target and     
+  gives back the response to clients
+|
+

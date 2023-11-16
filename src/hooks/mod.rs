@@ -1,13 +1,13 @@
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc};
 
 use crate::error::Result;
 
-pub use self::types::{Direction, Request, Response};
+pub use self::types::{Direction, HookRequest, HookResponse};
 
 mod builder;
 mod types;
 
-pub type HookFn = Box<dyn Fn(Request) -> Result<Option<Response>> + Sync + Send>;
+pub type HookFn = Box<dyn Fn(HookRequest) -> Result<Option<HookResponse>> + Sync + Send>;
 
 pub struct Hook {
     pub direction: Option<Direction>,
@@ -20,7 +20,7 @@ impl Hook {
         builder::HookBuilder::new(trigger_fn)
     }
 
-    pub fn matches(&self, request: &Request) -> bool {
+    pub fn matches(&self, request: &HookRequest) -> bool {
         if let Some(direction) = self.direction {
             if direction != request.direction {
                 return false;
@@ -42,14 +42,13 @@ pub struct Header {
 }
 
 pub fn hook_executor(
-    hooks: Arc<Mutex<Vec<Hook>>>,
-    request_receiver: mpsc::Receiver<Request>,
-    response_sender: mpsc::Sender<Result<Response>>,
+    hooks: Arc<Vec<Hook>>,
+    request_receiver: mpsc::Receiver<HookRequest>,
+    response_sender: mpsc::Sender<Result<HookResponse>>,
 ) {
     std::thread::spawn(move || {
         for request in request_receiver {
             let mut data = request.data.clone();
-            let hooks = hooks.lock().unwrap();
             for hook in hooks.iter().filter(|h| h.matches(&request)) {
                 data = match (hook.trigger_fn)(request.clone()) {
                     Ok(Some(response)) => response.data.clone(),
@@ -64,7 +63,7 @@ pub fn hook_executor(
                 }
             }
 
-            let response = Response::new(data);
+            let response = HookResponse::new(data);
             response_sender
                 .send(Ok(response))
                 .expect("response_sender is active");

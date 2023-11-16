@@ -1,16 +1,10 @@
-use std::{
-    collections::HashMap,
-    fs,
-    path::{PathBuf},
-    sync::{mpsc, Arc, Mutex},
-    thread,
-};
+use std::{collections::HashMap, fs, path::PathBuf, sync::mpsc, thread};
 
 use clap::Parser;
 use cli::{Args, Config, ConfigTargets, Script};
 use script::exec_worker;
 
-use yprox::hooks::{Hook, Request, Response};
+use yprox::hooks::{Hook, HookFn, HookRequest, HookResponse};
 pub use yprox::{
     error::{Error, Result},
     start_proxy, start_proxy_with_hooks,
@@ -23,9 +17,6 @@ mod script;
 
 fn main() -> Result<()> {
     let args = Args::parse();
-
-    println!("args {:#?}", args);
-
     let config_path = args.config.unwrap_or_else(|| PathBuf::from("yprox.toml"));
 
     let config = if config_path.exists() {
@@ -76,8 +67,6 @@ fn main() -> Result<()> {
         }
     };
 
-    println!("{:#?}", config);
-
     let targets = match config.targets {
         ConfigTargets::Named(targets) => targets
             .into_iter()
@@ -99,17 +88,16 @@ fn main() -> Result<()> {
         }
 
         let (send_exec_request, receive_exec_request) = mpsc::channel();
-        let (send_exec_response, receive_exec_response) = mpsc::channel();
+        let (send_exec_response, receive_exec_response) = crossbeam::channel::unbounded();
 
         thread::spawn(move || {
             exec_worker(receive_exec_request, send_exec_response);
         });
 
         let script_def = config.scripts.first().unwrap();
-        let receive_exec_response = Arc::new(Mutex::new(receive_exec_response));
 
         let script = script_def.script.clone();
-        let exec_fn = Box::new(move |request: Request| {
+        let exec_fn = Box::new(move |request: HookRequest| {
             send_exec_request
                 .send(ExecRequest {
                     script: script.clone(),
@@ -118,13 +106,13 @@ fn main() -> Result<()> {
                     data: request.data,
                 })
                 .unwrap();
-            let locked_receive_exec_response = receive_exec_response.lock().unwrap();
+            let locked_receive_exec_response = receive_exec_response.clone();
             let result = locked_receive_exec_response.recv().unwrap();
             let data = result.unwrap().data;
-            let response = data.map(Response::new);
+            let response = data.map(HookResponse::new);
 
             Ok(response)
-        });
+        }) as HookFn;
 
         let hooks = vec![Hook::builder(exec_fn).build()];
 

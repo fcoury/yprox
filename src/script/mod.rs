@@ -22,7 +22,7 @@ pub struct ExecResponse {
 
 pub fn exec_worker(
     receive_exec_request: mpsc::Receiver<ExecRequest>,
-    send_exec_response: mpsc::Sender<Result<ExecResponse>>,
+    send_exec_response: crossbeam::channel::Sender<Result<ExecResponse>>,
 ) {
     let mut engine = Engine::new();
 

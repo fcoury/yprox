@@ -4,7 +4,7 @@ use std::{
     sync::{mpsc, Arc},
 };
 
-use crate::{server::Message, Result};
+use crate::{cli::Target, server::Message, Result};
 
 pub fn client(stream: Arc<TcpStream>, tx: mpsc::Sender<Message>) -> Result<()> {
     let addr = stream.peer_addr()?;
@@ -22,6 +22,7 @@ pub fn client(stream: Arc<TcpStream>, tx: mpsc::Sender<Message>) -> Result<()> {
             tx.send(Message::NewClientMessage { addr, bytes })?;
         } else {
             tx.send(Message::ClientDisconnected { addr })?;
+            stream.shutdown(std::net::Shutdown::Both)?;
             break;
         }
     }
@@ -31,4 +32,5 @@ pub fn client(stream: Arc<TcpStream>, tx: mpsc::Sender<Message>) -> Result<()> {
 
 pub struct Client {
     pub stream: Arc<TcpStream>,
+    pub targets: Vec<Target>,
 }

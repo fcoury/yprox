@@ -6,17 +6,18 @@ use std::{
 };
 
 use crate::{
+    broadcaster::BroadcastRequest,
     client::Client,
-    hooks::{Direction, Request, Response},
+    hooks::{Direction, HookRequest, HookResponse},
     utils::hex_dump,
     Result,
 };
 
 pub fn server(
     receive_message: mpsc::Receiver<Message>,
-    send_broadcast: mpsc::Sender<Box<[u8]>>,
-    send_hook_request: mpsc::Sender<Request>,
-    recv_hook_response: mpsc::Receiver<Result<Response>>,
+    send_broadcast: mpsc::Sender<BroadcastRequest>,
+    send_hook_request: mpsc::Sender<HookRequest>,
+    recv_hook_response: mpsc::Receiver<Result<HookResponse>>,
 ) -> Result<()> {
     let mut server = Server::new();
 
@@ -39,12 +40,23 @@ pub fn server(
             }
             Message::NewClientMessage { addr, bytes } => {
                 server.new_message(addr, &bytes);
-                send_broadcast.send(bytes)?;
+                send_broadcast.send(BroadcastRequest {
+                    from_addr: addr,
+                    bytes,
+                })?;
             }
-            Message::NewTargetMessage { name, addr, bytes } => {
-                send_hook_request.send(Request::new(Direction::TargetToClient, &name, bytes))?;
+            Message::NewTargetMessage {
+                from_target,
+                to_addr,
+                bytes,
+            } => {
+                send_hook_request.send(HookRequest::new(
+                    Direction::TargetToClient,
+                    &from_target,
+                    bytes,
+                ))?;
                 let response = recv_hook_response.recv()?;
-                server.new_response(name, addr, &response?.data);
+                server.new_response(from_target, to_addr, &response?.data);
             }
         }
     }
@@ -65,6 +77,7 @@ impl Server {
 
     fn client_connected(&mut self, stream: Arc<TcpStream>, addr: SocketAddr) {
         println!("Client connected: {}", addr);
+
         self.clients.insert(addr, Client { stream });
     }
 
@@ -89,11 +102,17 @@ impl Server {
         hex_dump(bytes, format!("{}", addr).as_str());
     }
 
-    fn new_response(&mut self, name: String, _addr: SocketAddr, bytes: &[u8]) {
-        hex_dump(bytes, &name);
-        for client in self.clients.values() {
-            // TODO: handle result below
-            _ = client.stream.as_ref().write_all(bytes);
+    fn new_response(&mut self, from_target: String, to_addr: SocketAddr, bytes: &[u8]) {
+        hex_dump(bytes, format!("{from_target} -> {to_addr}").as_str());
+
+        match self.clients.get(&to_addr) {
+            Some(client) => {
+                _ = client.stream.as_ref().write_all(bytes);
+                client.stream.as_ref().flush().unwrap();
+            }
+            None => {
+                eprintln!("Could not send response to Client {}: not found", to_addr);
+            }
         }
     }
 }
@@ -119,8 +138,8 @@ pub enum Message {
         addr: SocketAddr,
     },
     NewTargetMessage {
-        name: String,
-        addr: SocketAddr,
+        from_target: String,
+        to_addr: SocketAddr,
         bytes: Box<[u8]>,
     },
     TargetReconnected {

@@ -1,13 +1,13 @@
 use std::{
     net::{SocketAddr, TcpListener},
-    sync::{mpsc, Arc, Mutex},
+    sync::{mpsc, Arc},
     thread,
 };
 
 use broadcaster::broadcaster;
 use client::client;
 use error::Result;
-use hooks::{hook_executor, Hook, Request, Response};
+use hooks::{hook_executor, Hook, HookRequest, HookResponse};
 use server::server;
 
 pub mod broadcaster;
@@ -56,11 +56,12 @@ pub fn start_proxy_with_hooks(
     let (send_broadcast, receive_broadcast) = mpsc::channel();
 
     // hooks
-    let hooks = Arc::new(Mutex::new(hooks));
+    let hooks = Arc::new(hooks);
 
     // used to send requests to the hook executor from the server context
-    let (server_request_sender, server_request_receiver) = mpsc::channel::<Request>();
-    let (server_response_sender, server_response_receiver) = mpsc::channel::<Result<Response>>();
+    let (server_request_sender, server_request_receiver) = mpsc::channel::<HookRequest>();
+    let (server_response_sender, server_response_receiver) =
+        mpsc::channel::<Result<HookResponse>>();
     hook_executor(
         hooks.clone(),
         server_request_receiver,
@@ -68,9 +69,9 @@ pub fn start_proxy_with_hooks(
     );
 
     // used to send requests to the hook executor from the broadcaster context
-    let (broadcaster_request_sender, broadcaster_request_receiver) = mpsc::channel::<Request>();
+    let (broadcaster_request_sender, broadcaster_request_receiver) = mpsc::channel::<HookRequest>();
     let (broadcaster_response_sender, broadcaster_response_receiver) =
-        mpsc::channel::<Result<Response>>();
+        mpsc::channel::<Result<HookResponse>>();
 
     hook_executor(
         hooks,

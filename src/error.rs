@@ -1,14 +1,14 @@
 use std::{net::SocketAddr, sync::mpsc};
 
-use crate::{hooks::Request, server::Message};
+use crate::{broadcaster::BroadcastRequest, hooks::HookRequest, server::Message};
 
 #[derive(Debug)]
 pub enum Error {
     AcceptingConnection(std::io::Error),
     ReceiveError(mpsc::RecvError),
     SendError(mpsc::SendError<Message>),
-    HookExecutionError(mpsc::SendError<Request>),
-    BroadcastError(mpsc::SendError<Box<[u8]>>),
+    HookExecutionError(mpsc::SendError<HookRequest>),
+    BroadcastError(mpsc::SendError<BroadcastRequest>),
     ConnectionError {
         target: SocketAddr,
         cause: std::io::Error,
@@ -34,14 +34,14 @@ impl From<mpsc::SendError<Message>> for Error {
     }
 }
 
-impl From<mpsc::SendError<Box<[u8]>>> for Error {
-    fn from(err: mpsc::SendError<Box<[u8]>>) -> Self {
+impl From<mpsc::SendError<BroadcastRequest>> for Error {
+    fn from(err: mpsc::SendError<BroadcastRequest>) -> Self {
         Self::BroadcastError(err)
     }
 }
 
-impl From<mpsc::SendError<Request>> for Error {
-    fn from(err: mpsc::SendError<Request>) -> Self {
+impl From<mpsc::SendError<HookRequest>> for Error {
+    fn from(err: mpsc::SendError<HookRequest>) -> Self {
         Self::HookExecutionError(err)
     }
 }
