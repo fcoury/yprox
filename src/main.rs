@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{collections::HashMap, net::SocketAddr};
 
 use clap::Parser;
 use tokio::{
@@ -12,8 +12,73 @@ mod config;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = config::Args::parse();
-    println!("Loading config from {}", args.config.display());
-    let config = config::load(&args.config)?;
+
+    let config = if let Some(ref config_file) = args.config {
+        // check if config_file exists
+        if !config_file.exists() {
+            eprintln!("Config file {:?} does not exist", config_file);
+            std::process::exit(1);
+        }
+        println!("Loading config from {:?}", args.config);
+        config::load(&config_file)?
+    } else {
+        let backends = args.backend.expect("backend is required by clap here");
+        let backends = if backends.iter().any(|b| b.contains('=')) {
+            config::Backends::Named(
+                backends
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, s)| {
+                        let mut parts = s.splitn(2, '=');
+                        let first = parts.next().unwrap_or_default().to_string();
+                        let last = parts.next();
+
+                        match last {
+                            Some(last) => (
+                                first.clone(),
+                                last.parse()
+                                    .map_err(|e| {
+                                        eprintln!("Error parsing backend {}: {}", first, e);
+                                        std::process::exit(1);
+                                    })
+                                    .unwrap(),
+                            ),
+                            None => (
+                                format!("backend{}", i + 1),
+                                first
+                                    .parse()
+                                    .map_err(|e| {
+                                        eprintln!("Error parsing backend {}: {}", first, e);
+                                        std::process::exit(1);
+                                    })
+                                    .unwrap(),
+                            ),
+                        }
+                    })
+                    .collect::<HashMap<String, SocketAddr>>(),
+            )
+        } else {
+            config::Backends::Anon(
+                backends
+                    .iter()
+                    .map(|b| {
+                        b.parse()
+                            .map_err(|e| {
+                                eprintln!("Error parsing backend {}: {}", b, e);
+                                std::process::exit(1);
+                            })
+                            .unwrap()
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        };
+        config::Config {
+            bind: args.bind.unwrap(),
+            backends,
+            default_backend: None,
+            scripts: vec![],
+        }
+    };
 
     let addr = config.bind;
     let backends = config.backends();

@@ -46,6 +46,14 @@ pub fn load(config_file: &Path) -> anyhow::Result<Config> {
 #[derive(Debug, Parser)]
 pub struct Args {
     /// Location of the config file
-    #[clap(short, long, default_value = "yprox.toml")]
-    pub config: PathBuf,
+    #[clap(short, long)]
+    pub config: Option<PathBuf>,
+
+    /// Bind address
+    #[clap(long, requires = "backend")]
+    pub bind: Option<SocketAddr>,
+
+    /// Backend addresses
+    #[clap(long, requires = "bind")]
+    pub backend: Option<Vec<String>>,
 }
