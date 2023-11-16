@@ -92,13 +92,7 @@ async fn handle_client(
                         _ = &connected.store(false, Ordering::SeqCst);
                         break;
                     }
-                    Err(_err) => {
-                        // eprintln!(
-                        //     "Error receiving broadcast for backend {} ({}) for client {}: {}",
-                        //     &bname, backend_address, client_address, err
-                        // );
-                        break;
-                    }
+                    Err(_) => break,
                 }
             }
         });
@@ -119,24 +113,16 @@ async fn handle_client(
                     Ok(n) => {
                         if n == 0 {
                             println!("Backend disconnected: {}", backend_address);
-                            if let Err(_err) = backend_response_tx.send(Message::Disconnect).await {
-                                // eprintln!(
-                                //     "Error sending backend {} disconnect notification to client {}: {}",
-                                //     name, client_address, err
-                                // );
-                            }
+                            backend_response_tx.send(Message::Disconnect).await.ok();
                             break;
                         }
-                        let data = buffer[..n].to_vec();
+
                         // sends the backend response to the client
                         // only sends this response for the selected backend
+                        let data = buffer[..n].to_vec();
                         if name == selected_backend {
                             hex_dump(&data, format!("{} -> {}", &name, &client_address).as_str());
-                            if let Err(_err) = backend_response_tx.send(Message::Data(data)).await {
-                                // eprintln!(
-                                //     "Error sending backend {} response to client {}: {}",
-                                //     name, client_address, err
-                                // );
+                            if let Err(_) = backend_response_tx.send(Message::Data(data)).await {
                                 break;
                             }
                         } else {
@@ -163,10 +149,6 @@ async fn handle_client(
             }
 
             let Some(data) = backend_response_rx.recv().await else {
-                // eprintln!(
-                //     "Could not receive a backend response sending to client {}",
-                //     client_address
-                // );
                 break;
             };
 
@@ -201,11 +183,7 @@ async fn handle_client(
                     let data = buffer[..n].to_vec();
                     (Message::Data(data), false)
                 };
-                if let Err(_err) = broadcast_tx.send(message) {
-                    // eprintln!(
-                    //     "Error sending data from client {} to backend: {}",
-                    //     client_address, err
-                    // );
+                if let Err(_) = broadcast_tx.send(message) {
                     break;
                 }
                 if disconnect {
