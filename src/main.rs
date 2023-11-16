@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     net::SocketAddr,
+    path::Path,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -20,7 +21,16 @@ mod config;
 async fn main() -> anyhow::Result<()> {
     let args = config::Args::parse();
 
-    let config = if let Some(ref config_file) = args.config {
+    let default_config = Path::new("yprox.toml");
+    let config_file = if args.config.is_some() {
+        args.config
+    } else if args.backend.is_none() && default_config.exists() {
+        Some(default_config.to_path_buf())
+    } else {
+        None
+    };
+
+    let config = if let Some(ref config_file) = config_file {
         // check if config_file exists
         if !config_file.exists() {
             eprintln!(
@@ -29,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
             );
             std::process::exit(1);
         }
-        println!("Loading config from {:?}", args.config);
+        println!("Loading config from {:?}", config_file);
         config::load(&config_file)?
     } else {
         let Some(backends) = args.backend else {
