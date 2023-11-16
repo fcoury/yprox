@@ -1,9 +1,11 @@
 [package]
-name = "testp"
-version = "0.1.0"
+name = "yprox"
+description = "A modifying, multiplexer tcp proxy server tool and library."
+version = "0.2.1"
+authors = ["Felipe Coury <felipe.coury@gmail.com>", "mo8bit"]
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license = "MIT"
+repository = "https://github.com/fcoury/yprox"
 
 [dependencies]
 anyhow = "1.0.75"

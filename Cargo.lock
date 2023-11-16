@@ -510,18 +510,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "testp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "futures",
- "serde",
- "tokio",
- "toml",
-]
-
-[[package]]
 name = "tokio"
 version = "1.34.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -677,4 +665,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "829846f3e3db426d4cee4510841b71a8e58aa2a76b1132579487ae430ccd9c7b"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "yprox"
+version = "0.2.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "futures",
+ "serde",
+ "tokio",
+ "toml",
 ]
