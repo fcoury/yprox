@@ -8,7 +8,7 @@ use std::{
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::{tcp::OwnedWriteHalf, TcpListener, TcpStream},
     sync::{broadcast, mpsc},
 };
 
@@ -73,28 +73,15 @@ async fn handle_client(
         let bname = name.clone();
         let connected = Arc::clone(&client_connected);
         tokio::spawn(async move {
-            loop {
-                let mut broadcast_tx = broadcast_tx.subscribe();
-                match broadcast_tx.recv().await {
-                    Ok(Message::Data(data)) => {
-                        // sends the broadcast data to this backend
-                        hex_dump(&data, format!("{} -> {}", &client_address, &bname).as_str());
-                        if let Err(err) = backend_sender.write_all(&data).await {
-                            eprintln!(
-                                "Error sending data from client {} to backend {} ({}): {}",
-                                client_address, &bname, backend_address, err
-                            );
-                            break;
-                        }
-                    }
-                    Ok(Message::Disconnect) => {
-                        println!("Client disconnected: {}", client_address);
-                        _ = &connected.store(false, Ordering::SeqCst);
-                        break;
-                    }
-                    Err(_) => break,
-                }
-            }
+            handle_backend(
+                &bname,
+                &client_address,
+                &backend_address,
+                &mut backend_sender,
+                broadcast_tx,
+                connected,
+            )
+            .await;
         });
 
         // receiver task
@@ -197,6 +184,38 @@ async fn handle_client(
                 );
                 break;
             }
+        }
+    }
+}
+
+async fn handle_backend(
+    name: &str,
+    client_address: &SocketAddr,
+    backend_address: &SocketAddr,
+    backend_sender: &mut OwnedWriteHalf,
+    broadcast_tx: broadcast::Sender<Message>,
+    connected: Arc<AtomicBool>,
+) {
+    loop {
+        let mut broadcast_tx = broadcast_tx.subscribe();
+        match broadcast_tx.recv().await {
+            Ok(Message::Data(data)) => {
+                // sends the broadcast data to this backend
+                hex_dump(&data, format!("{} -> {}", &client_address, &name).as_str());
+                if let Err(err) = backend_sender.write_all(&data).await {
+                    eprintln!(
+                        "Error sending data from client {} to backend {} ({}): {}",
+                        client_address, name, backend_address, err
+                    );
+                    break;
+                }
+            }
+            Ok(Message::Disconnect) => {
+                println!("Client disconnected: {}", client_address);
+                _ = &connected.store(false, Ordering::SeqCst);
+                break;
+            }
+            Err(_) => break,
         }
     }
 }
