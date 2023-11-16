@@ -63,7 +63,10 @@ async fn main() -> anyhow::Result<()> {
                                 first.clone(),
                                 last.parse()
                                     .map_err(|e| {
-                                        eprintln!("Error parsing backend {}: {}", first, e);
+                                        eprintln!(
+                                            "\x1b[31merror:\x1b[0m can't parse backend {} - {}",
+                                            first, e
+                                        );
                                         std::process::exit(1);
                                     })
                                     .unwrap(),
@@ -73,7 +76,10 @@ async fn main() -> anyhow::Result<()> {
                                 first
                                     .parse()
                                     .map_err(|e| {
-                                        eprintln!("Error parsing backend {}: {}", first, e);
+                                        eprintln!(
+                                            "\x1b[31merror:\x1b[0m can't parse backend {} - {}",
+                                            first, e
+                                        );
                                         std::process::exit(1);
                                     })
                                     .unwrap(),
@@ -89,7 +95,10 @@ async fn main() -> anyhow::Result<()> {
                     .map(|b| {
                         b.parse()
                             .map_err(|e| {
-                                eprintln!("Error parsing backend {}: {}", b, e);
+                                eprintln!(
+                                    "\x1b[31merror:\x1b[0m can't parse backend {} - {}",
+                                    b, e
+                                );
                                 std::process::exit(1);
                             })
                             .unwrap()
