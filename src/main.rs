@@ -1,29 +1,49 @@
+use std::net::SocketAddr;
+
+use clap::Parser;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::{broadcast, mpsc},
 };
 
+mod config;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let addr = "127.0.0.1:27018";
-    let backends = vec!["127.0.0.1:27017".to_string(), "127.0.0.1:27016".to_string()];
+    let args = config::Args::parse();
+    println!("Loading config from {}", args.config.display());
+    let config = config::load(&args.config)?;
+
+    let addr = config.bind;
+    let backends = config.backends();
 
     let listener = TcpListener::bind(addr).await?;
+    println!("Listening on {}...", addr);
 
+    let selected_backend = config.default_backend.unwrap_or_else(|| {
+        let (name, _) = backends.iter().next().unwrap();
+        name.clone()
+    });
+    let backends: Vec<(String, SocketAddr)> = backends.into_iter().collect();
     loop {
         // accept connection
         let (socket, client_address) = listener.accept().await?;
         // send tcp stream to a task handler
-        let backends = backends.clone();
         println!("Client connected: {}", client_address);
+        let backends = backends.clone();
+        let selected_backend = selected_backend.clone();
         tokio::spawn(async move {
-            handle_client(&backends, socket).await;
+            handle_client(&backends, &selected_backend, socket).await;
         });
     }
 }
 
-async fn handle_client(backends: &[String], socket: TcpStream) {
+async fn handle_client(
+    backends: &[(String, SocketAddr)],
+    selected_backend: &str,
+    socket: TcpStream,
+) {
     let client_address = socket.peer_addr().unwrap();
     // creates a broadcast channel to send messages from the client
     let (broadcast_sender, _) = broadcast::channel::<Vec<u8>>(32);
@@ -32,35 +52,35 @@ async fn handle_client(backends: &[String], socket: TcpStream) {
     let (mut client_receiver, mut client_sender) = socket.into_split();
 
     for backend in backends {
+        let name = backend.0.clone();
+
         // connects to each backend
-        let backend_connection = TcpStream::connect(backend).await.unwrap();
+        let backend_connection = TcpStream::connect(backend.1).await.unwrap();
         let backend_address = backend_connection.peer_addr().unwrap();
         let (mut backend_receiver, mut backend_sender) = backend_connection.into_split();
 
         // sender task
         let broadcast_sender = broadcast_sender.clone();
+        let bname = name.clone();
         tokio::spawn(async move {
             loop {
                 let mut broadcast_receiver = broadcast_sender.subscribe();
                 match broadcast_receiver.recv().await {
                     Ok(data) => {
                         // sends the broadcast data to this backend
-                        hex_dump(
-                            &data,
-                            format!("{} -> {}", &client_address, &backend_address).as_str(),
-                        );
+                        hex_dump(&data, format!("{} -> {}", &client_address, &bname).as_str());
                         if let Err(err) = backend_sender.write_all(&data).await {
                             eprintln!(
-                                "Error sending data from client {} to backend {}: {}",
-                                client_address, backend_address, err
+                                "Error sending data from client {} to backend {} ({}): {}",
+                                client_address, &bname, backend_address, err
                             );
                             break;
                         }
                     }
                     Err(err) => {
                         eprintln!(
-                            "Error receiving data from client {}: {}",
-                            client_address, err
+                            "Error receiving broadcast for backend {} ({}) for client {}: {}",
+                            &bname, backend_address, client_address, err
                         );
                         break;
                     }
@@ -70,6 +90,7 @@ async fn handle_client(backends: &[String], socket: TcpStream) {
 
         // receiver task
         let backend_response_sender = backend_response_sender.clone();
+        let selected_backend = selected_backend.to_string();
         tokio::spawn(async move {
             let mut buffer = [0; 1024];
             loop {
@@ -81,22 +102,24 @@ async fn handle_client(backends: &[String], socket: TcpStream) {
                         }
                         let data = buffer[..n].to_vec();
                         // sends the backend response to the client
-                        hex_dump(
-                            &data,
-                            format!("{} -> {}", &backend_address, &client_address).as_str(),
-                        );
-                        if let Err(err) = backend_response_sender.send(data).await {
-                            eprintln!(
-                                "Error sending backend response from {} to client {}: {}",
-                                backend_address, client_address, err
-                            );
-                            break;
+                        // only sends this response for the selected backend
+                        if name == selected_backend {
+                            hex_dump(&data, format!("{} -> {}", &name, &client_address).as_str());
+                            if let Err(err) = backend_response_sender.send(data).await {
+                                eprintln!(
+                                    "Error sending backend {} response to client {}: {}",
+                                    name, client_address, err
+                                );
+                                break;
+                            }
+                        } else {
+                            hex_dump(&data, format!("{} -| {}", &name, &client_address).as_str());
                         }
                     }
                     Err(err) => {
                         eprintln!(
-                            "Error receiving data from backend {}: {}",
-                            backend_address, err
+                            "Error receiving data from backend {} ({}): {}",
+                            name, backend_address, err
                         );
                         break;
                     }
