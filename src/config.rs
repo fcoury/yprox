@@ -56,4 +56,8 @@ pub struct Args {
     /// Backend addresses
     #[clap(long, requires = "bind")]
     pub backend: Option<Vec<String>>,
+
+    /// Default backend
+    #[clap(long, requires = "backend")]
+    pub default: Option<String>,
 }

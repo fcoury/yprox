@@ -100,7 +100,7 @@ async fn main() -> anyhow::Result<()> {
         config::Config {
             bind: args.bind.unwrap(),
             backends,
-            default_backend: None,
+            default_backend: args.default,
             scripts: vec![],
         }
     };
