@@ -113,7 +113,7 @@ async fn handle_client(
                                 break;
                             }
                         } else {
-                            hex_dump(&data, format!("{} -| {}", &name, &client_address).as_str());
+                            hex_dump(&data, format!("{} -|", &name).as_str());
                         }
                     }
                     Err(err) => {
@@ -207,6 +207,6 @@ pub fn hex_dump(data: &[u8], info: &str) {
             })
             .collect();
 
-        println!("{:20}: {:47}  |{}|", info, hex.join(" "), ascii);
+        println!("{:35}: {:47}  |{}|", info, hex.join(" "), ascii);
     }
 }
