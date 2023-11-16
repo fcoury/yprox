@@ -8,7 +8,10 @@ use std::{
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{tcp::OwnedWriteHalf, TcpListener, TcpStream},
+    net::{
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+        TcpListener, TcpStream,
+    },
     sync::{broadcast, mpsc},
 };
 
@@ -45,6 +48,7 @@ async fn main() -> anyhow::Result<()> {
 pub enum Message {
     Data(Vec<u8>),
     Disconnect,
+    Error(String),
 }
 
 async fn handle_client(
@@ -64,20 +68,43 @@ async fn handle_client(
         let name = backend.0.clone();
 
         // connects to each backend
-        let backend_connection = TcpStream::connect(backend.1).await.unwrap();
-        let backend_address = backend_connection.peer_addr().unwrap();
-        let (mut backend_receiver, mut backend_sender) = backend_connection.into_split();
+        let conn = match TcpStream::connect(backend.1).await {
+            Ok(conn) => conn,
+            Err(err) => {
+                eprintln!(
+                    "Error connecting to backend {} ({}): {}",
+                    name, backend.1, err
+                );
+                _ = broadcast_tx.send(Message::Error(format!(
+                    "Error connecting to backend {} ({}): {}",
+                    name, backend.1, err
+                )));
+                continue;
+            }
+        };
+        let addr = match conn.peer_addr() {
+            Ok(addr) => addr,
+            Err(err) => {
+                eprintln!("Error getting peer address: {}", err);
+                _ = broadcast_tx.send(Message::Error(format!(
+                    "Error getting peer address: {}",
+                    err
+                )));
+                continue;
+            }
+        };
+        let (mut rx, mut tx) = conn.into_split();
 
         // sender task
         let broadcast_tx = broadcast_tx.clone();
         let bname = name.clone();
         let connected = Arc::clone(&client_connected);
         tokio::spawn(async move {
-            handle_backend(
+            backend_sender(
                 &bname,
                 &client_address,
-                &backend_address,
-                &mut backend_sender,
+                &addr,
+                &mut tx,
                 broadcast_tx,
                 connected,
             )
@@ -89,45 +116,20 @@ async fn handle_client(
         let selected_backend = selected_backend.to_string();
         let connected = Arc::clone(&client_connected);
         tokio::spawn(async move {
-            let mut buffer = [0; 1024];
-            loop {
-                let connected = &connected.load(Ordering::SeqCst);
-                if !connected {
-                    break;
-                }
-
-                match backend_receiver.read(&mut buffer).await {
-                    Ok(n) => {
-                        if n == 0 {
-                            println!("Backend disconnected: {}", backend_address);
-                            backend_response_tx.send(Message::Disconnect).await.ok();
-                            break;
-                        }
-
-                        // sends the backend response to the client
-                        // only sends this response for the selected backend
-                        let data = buffer[..n].to_vec();
-                        if name == selected_backend {
-                            hex_dump(&data, format!("{} -> {}", &name, &client_address).as_str());
-                            if let Err(_) = backend_response_tx.send(Message::Data(data)).await {
-                                break;
-                            }
-                        } else {
-                            hex_dump(&data, format!("{} -|", &name).as_str());
-                        }
-                    }
-                    Err(err) => {
-                        eprintln!(
-                            "Error receiving data from backend {} ({}): {}",
-                            name, backend_address, err
-                        );
-                        break;
-                    }
-                }
-            }
+            backend_receiver(
+                &name,
+                &selected_backend,
+                &client_address,
+                &addr,
+                &mut rx,
+                &backend_response_tx,
+                connected,
+            )
+            .await;
         });
     }
 
+    // client sender
     tokio::spawn(async move {
         loop {
             let connected = &client_connected.load(Ordering::SeqCst);
@@ -150,6 +152,10 @@ async fn handle_client(
                         break;
                     }
                 }
+                Message::Error(cause) => {
+                    eprintln!("Error processing request: {cause}");
+                    break;
+                }
                 Message::Disconnect => {
                     println!("Backend disconnected: {}", client_address);
                     break;
@@ -158,6 +164,7 @@ async fn handle_client(
         }
     });
 
+    // client receiver
     let mut buffer = [0; 1024];
     loop {
         // receives and broadcasts data from the client
@@ -188,7 +195,7 @@ async fn handle_client(
     }
 }
 
-async fn handle_backend(
+async fn backend_sender(
     name: &str,
     client_address: &SocketAddr,
     backend_address: &SocketAddr,
@@ -210,12 +217,63 @@ async fn handle_backend(
                     break;
                 }
             }
+            Ok(Message::Error(cause)) => {
+                println!("Error processing broadcast: {cause}");
+                break;
+            }
             Ok(Message::Disconnect) => {
                 println!("Client disconnected: {}", client_address);
                 _ = &connected.store(false, Ordering::SeqCst);
                 break;
             }
             Err(_) => break,
+        }
+    }
+}
+
+async fn backend_receiver(
+    name: &str,
+    selected_backend: &str,
+    client_address: &SocketAddr,
+    backend_address: &SocketAddr,
+    backend_receiver: &mut OwnedReadHalf,
+    backend_response_tx: &mpsc::Sender<Message>,
+    connected: Arc<AtomicBool>,
+) {
+    let mut buffer = [0; 1024];
+    loop {
+        let connected = &connected.load(Ordering::SeqCst);
+        if !connected {
+            break;
+        }
+
+        match backend_receiver.read(&mut buffer).await {
+            Ok(n) => {
+                if n == 0 {
+                    println!("Backend disconnected: {}", backend_address);
+                    backend_response_tx.send(Message::Disconnect).await.ok();
+                    break;
+                }
+
+                // sends the backend response to the client
+                // only sends this response for the selected backend
+                let data = buffer[..n].to_vec();
+                if name == selected_backend {
+                    hex_dump(&data, format!("{} -> {}", &name, &client_address).as_str());
+                    if let Err(_) = backend_response_tx.send(Message::Data(data)).await {
+                        break;
+                    }
+                } else {
+                    hex_dump(&data, format!("{} -|", &name).as_str());
+                }
+            }
+            Err(err) => {
+                eprintln!(
+                    "Error receiving data from backend {} ({}): {}",
+                    name, backend_address, err
+                );
+                break;
+            }
         }
     }
 }
