@@ -1,4 +1,11 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use clap::Parser;
 use tokio::{
@@ -104,6 +111,12 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum Message {
+    Data(Vec<u8>),
+    Disconnect,
+}
+
 async fn handle_client(
     backends: &[(String, SocketAddr)],
     selected_backend: &str,
@@ -111,10 +124,11 @@ async fn handle_client(
 ) {
     let client_address = socket.peer_addr().unwrap();
     // creates a broadcast channel to send messages from the client
-    let (broadcast_sender, _) = broadcast::channel::<Vec<u8>>(32);
+    let (broadcast_tx, _) = broadcast::channel::<Message>(32);
     // creates a channel to receive responses from each backend
-    let (backend_response_sender, mut backend_response_receiver) = mpsc::channel::<Vec<u8>>(32);
+    let (backend_response_tx, mut backend_response_rx) = mpsc::channel(32);
     let (mut client_receiver, mut client_sender) = socket.into_split();
+    let client_connected = Arc::new(AtomicBool::new(true));
 
     for backend in backends {
         let name = backend.0.clone();
@@ -125,13 +139,14 @@ async fn handle_client(
         let (mut backend_receiver, mut backend_sender) = backend_connection.into_split();
 
         // sender task
-        let broadcast_sender = broadcast_sender.clone();
+        let broadcast_tx = broadcast_tx.clone();
         let bname = name.clone();
+        let connected = Arc::clone(&client_connected);
         tokio::spawn(async move {
             loop {
-                let mut broadcast_receiver = broadcast_sender.subscribe();
-                match broadcast_receiver.recv().await {
-                    Ok(data) => {
+                let mut broadcast_tx = broadcast_tx.subscribe();
+                match broadcast_tx.recv().await {
+                    Ok(Message::Data(data)) => {
                         // sends the broadcast data to this backend
                         hex_dump(&data, format!("{} -> {}", &client_address, &bname).as_str());
                         if let Err(err) = backend_sender.write_all(&data).await {
@@ -142,11 +157,16 @@ async fn handle_client(
                             break;
                         }
                     }
-                    Err(err) => {
-                        eprintln!(
-                            "Error receiving broadcast for backend {} ({}) for client {}: {}",
-                            &bname, backend_address, client_address, err
-                        );
+                    Ok(Message::Disconnect) => {
+                        println!("Client disconnected: {}", client_address);
+                        _ = &connected.store(false, Ordering::SeqCst);
+                        break;
+                    }
+                    Err(_err) => {
+                        // eprintln!(
+                        //     "Error receiving broadcast for backend {} ({}) for client {}: {}",
+                        //     &bname, backend_address, client_address, err
+                        // );
                         break;
                     }
                 }
@@ -154,15 +174,27 @@ async fn handle_client(
         });
 
         // receiver task
-        let backend_response_sender = backend_response_sender.clone();
+        let backend_response_tx = backend_response_tx.clone();
         let selected_backend = selected_backend.to_string();
+        let connected = Arc::clone(&client_connected);
         tokio::spawn(async move {
             let mut buffer = [0; 1024];
             loop {
+                let connected = &connected.load(Ordering::SeqCst);
+                if !connected {
+                    break;
+                }
+
                 match backend_receiver.read(&mut buffer).await {
                     Ok(n) => {
                         if n == 0 {
                             println!("Backend disconnected: {}", backend_address);
+                            if let Err(_err) = backend_response_tx.send(Message::Disconnect).await {
+                                // eprintln!(
+                                //     "Error sending backend {} disconnect notification to client {}: {}",
+                                //     name, client_address, err
+                                // );
+                            }
                             break;
                         }
                         let data = buffer[..n].to_vec();
@@ -170,11 +202,11 @@ async fn handle_client(
                         // only sends this response for the selected backend
                         if name == selected_backend {
                             hex_dump(&data, format!("{} -> {}", &name, &client_address).as_str());
-                            if let Err(err) = backend_response_sender.send(data).await {
-                                eprintln!(
-                                    "Error sending backend {} response to client {}: {}",
-                                    name, client_address, err
-                                );
+                            if let Err(_err) = backend_response_tx.send(Message::Data(data)).await {
+                                // eprintln!(
+                                //     "Error sending backend {} response to client {}: {}",
+                                //     name, client_address, err
+                                // );
                                 break;
                             }
                         } else {
@@ -195,21 +227,34 @@ async fn handle_client(
 
     tokio::spawn(async move {
         loop {
-            let Some(data) = backend_response_receiver.recv().await else {
-                eprintln!(
-                    "Could not receive a backend response sending to client {}",
-                    client_address
-                );
-                continue;
+            let connected = &client_connected.load(Ordering::SeqCst);
+            if !connected {
+                break;
+            }
+
+            let Some(data) = backend_response_rx.recv().await else {
+                // eprintln!(
+                //     "Could not receive a backend response sending to client {}",
+                //     client_address
+                // );
+                break;
             };
 
-            // sends the backend response to the client
-            if let Err(err) = client_sender.write_all(&data).await {
-                eprintln!(
-                    "Error sending a backend response to client {}: {}",
-                    client_address, err
-                );
-                break;
+            match data {
+                Message::Data(data) => {
+                    // sends the backend response to the client
+                    if let Err(err) = client_sender.write_all(&data).await {
+                        eprintln!(
+                            "Error sending a backend response to client {}: {}",
+                            client_address, err
+                        );
+                        break;
+                    }
+                }
+                Message::Disconnect => {
+                    println!("Backend disconnected: {}", client_address);
+                    break;
+                }
             }
         }
     });
@@ -219,16 +264,21 @@ async fn handle_client(
         // receives and broadcasts data from the client
         match client_receiver.read(&mut buffer).await {
             Ok(n) => {
-                if n == 0 {
+                let (message, disconnect) = if n == 0 {
                     println!("Client disconnected: {}", client_address);
+                    (Message::Disconnect, true)
+                } else {
+                    let data = buffer[..n].to_vec();
+                    (Message::Data(data), false)
+                };
+                if let Err(_err) = broadcast_tx.send(message) {
+                    // eprintln!(
+                    //     "Error sending data from client {} to backend: {}",
+                    //     client_address, err
+                    // );
                     break;
                 }
-                let data = buffer[..n].to_vec();
-                if let Err(err) = broadcast_sender.send(data) {
-                    eprintln!(
-                        "Error sending data from client {} to backend: {}",
-                        client_address, err
-                    );
+                if disconnect {
                     break;
                 }
             }
