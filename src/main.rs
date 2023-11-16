@@ -47,8 +47,8 @@ async fn main() -> anyhow::Result<()> {
 #[derive(Debug, Clone)]
 pub enum Message {
     Data(Vec<u8>),
-    Disconnect,
     Error(String),
+    Disconnect,
 }
 
 async fn handle_client(
@@ -255,15 +255,17 @@ async fn backend_receiver(
                     break;
                 }
 
-                // sends the backend response to the client
-                // only sends this response for the selected backend
                 let data = buffer[..n].to_vec();
+
+                // if this response came from the selected backend
                 if name == selected_backend {
+                    // logs and sends the backend response to the client
                     hex_dump(&data, format!("{} -> {}", &name, &client_address).as_str());
                     if let Err(_) = backend_response_tx.send(Message::Data(data)).await {
                         break;
                     }
                 } else {
+                    // otherwise only log the response, indicating it won't be sent
                     hex_dump(&data, format!("{} -|", &name).as_str());
                 }
             }
