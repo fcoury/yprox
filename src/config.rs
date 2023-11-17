@@ -33,7 +33,7 @@ pub fn parse() -> anyhow::Result<Config> {
     } else {
         let Some(backends) = args.backend else {
             eprintln!(
-                "\x1b[31merror:\x1b[0m you need to provide `backend` or `config` attributes when yprox.toml is absent",
+                "\x1b[31merror:\x1b[0m you need to provide `backend`, `config` attributes or create a yprox.toml file",
             );
             std::process::exit(1);
         };
@@ -142,20 +142,27 @@ pub enum Backends {
 }
 
 #[derive(Debug, Parser)]
+#[clap(author, version, about)]
 pub struct Args {
-    /// Location of the config file
-    #[clap(short, long)]
+    /// Full path to the configuration file in toml format
+    /// When no arguments are given, yprox will look for a yprox.toml file in the current directory.
+    #[clap(short, long, verbatim_doc_comment)]
     pub config: Option<PathBuf>,
 
-    /// Bind address
+    /// Bind address in the `ip:port` format.
     #[clap(long, requires = "backend")]
     pub bind: Option<SocketAddr>,
 
-    /// Backend addresses
-    #[clap(long, requires = "bind")]
+    /// Backend address. Can be specified multiple times.
+    /// Each backend can be specified as `ip:port` or `name=ip:port`. If no name is specified, the
+    /// backend will be named `backend1`, `backend2`, etc.
+    #[clap(long, requires = "bind", verbatim_doc_comment)]
     pub backend: Option<Vec<String>>,
 
     /// Default backend
-    #[clap(long, requires = "backend")]
+    ///
+    /// Name of the backend for which response will be sent to the client. If not specified, the
+    /// first backend will be used.
+    #[clap(long, requires = "backend", verbatim_doc_comment)]
     pub default: Option<String>,
 }

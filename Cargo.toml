@@ -1,6 +1,6 @@
 [package]
 name = "yprox"
-description = "A modifying, multiplexer tcp proxy server tool and library."
+description = "A modifying, multiplexer tcp proxy server."
 version = "0.2.1"
 authors = ["Felipe Coury <felipe.coury@gmail.com>", "mo8bit"]
 edition = "2021"
