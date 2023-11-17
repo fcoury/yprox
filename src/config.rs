@@ -1,11 +1,11 @@
 use std::{
-    collections::HashMap,
     fs,
     net::SocketAddr,
     path::{Path, PathBuf},
 };
 
 use clap::Parser;
+use indexmap::IndexMap;
 use serde::Deserialize;
 
 pub fn parse() -> anyhow::Result<Config> {
@@ -75,7 +75,7 @@ pub fn parse() -> anyhow::Result<Config> {
                             ),
                         }
                     })
-                    .collect::<HashMap<String, SocketAddr>>(),
+                    .collect::<IndexMap<String, SocketAddr>>(),
             )
         } else {
             Backends::Anon(
@@ -122,7 +122,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn backends(&self) -> HashMap<String, SocketAddr> {
+    pub fn backends(&self) -> IndexMap<String, SocketAddr> {
         match &self.backends {
             Backends::Anon(backends) => backends
                 .iter()
@@ -138,7 +138,7 @@ impl Config {
 #[serde(untagged)]
 pub enum Backends {
     Anon(Vec<SocketAddr>),
-    Named(HashMap<String, SocketAddr>),
+    Named(IndexMap<String, SocketAddr>),
 }
 
 #[derive(Debug, Parser)]

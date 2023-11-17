@@ -30,6 +30,8 @@ async fn main() -> anyhow::Result<()> {
         let (name, _) = backends.iter().next().unwrap();
         name.clone()
     });
+    println!("Backends: {:?}", backends);
+    println!("Default backend: {}", selected_backend);
     let backends: Vec<(String, SocketAddr)> = backends.into_iter().collect();
     loop {
         // accept connection
