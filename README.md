@@ -2,60 +2,102 @@
 
 # yprox
 
-`yprox` is a versatile TCP proxy server tool and library, designed to modify and multiplex network traffic. It can be used as a standalone executable or integrated as a library in Rust applications.
+`yprox` is a versatile TCP proxy server tool and a Rust library, designed for modifying and multiplexing network traffic. It allows users to track and analyze traffic for different backend systems, aiding in performance monitoring and system emulation. `yprox` can be seamlessly used both as a standalone executable and as an integrated library in Rust applications.
 
-## Usage
+## Project Status
 
-### As an Executable
+`yprox` is currently under active development. The tool's primary aim is to facilitate the monitoring of multiple backend behaviors by capturing and comparing traffic between the original system and a secondary system designed to replicate the original's functionality.
 
-Install `yprox` using Cargo:
+## Installation
+
+Install `yprox` easily using Cargo, Rust's package manager:
 
 ```sh
 cargo install yprox
 ```
 
-To run `yprox`, specify a listening address and one or more target addresses:
+## Configuration
 
-```sh
-yprox <listen_addr> <target1> ... <targetN>
-```
+### Using a Configuration File
 
-For example, to start a proxy server that listens on `127.0.0.1:8080` and forwards connections to `127.0.0.1:9000` and `127.0.0.1:9001`:
+`yprox` supports configuration through a TOML file. By default, it searches for a file named `yprox.toml` in the current directory. This file allows you to specify the server settings in a structured format.
 
-```sh
-yprox 127.0.0.1:8080 127.0.0.1:9000 127.0.0.1:9001
-```
-
-Optionally, name each target using the `key=value` format for easier log identification:
-
-```sh
-yprox 127.0.0.1:8080 qa=127.0.0.1:9000 test=127.0.0.1:9001 
-```
-
-Unnamed targets will receive default names in the format `targetN`.
-
-### As a Library
-
-Add `yprox` to your `Cargo.toml`:
+Here is the structure of `yprox.toml`:
 
 ```toml
-[dependencies]
-yprox = "0.2.1"
+# Example yprox.toml configuration
+bind = "ip:port"                   # The bind address
+backends = ["ip:port", "ip:port"]  # List of backends
+default_backend = "backendName"    # Optional: Default backend name
 ```
 
-Then, use `yprox` in your Rust application:
+You can also provide `backends` as a *TOML table*:
 
-```rust
-use yprox::start_proxy;
-
-fn main() {
-    let bind_addr = "127.0.0.1:8080".parse().unwrap();
-    let targets = vec![
-        ("server1".to_string(), "127.0.0.1:8081".parse().unwrap()),
-        ("server2".to_string(), "127.0.0.1:8082".parse().unwrap())
-    ];
-    start_proxy(bind_addr, targets);
-}
+```toml
+backends = { primary = "127.0.0.1:27017", secondary = "127.0.0.1:27016" }
 ```
 
-This will start a proxy server that listens on `127.0.0.1:8080` and forwards incoming connections to `127.0.0.1:9000` and `127.0.0.1:9001`.
+This way you can name each backend.
+
+### Command Line Options
+
+If you prefer not to use a configuration file, `yprox` can also be configured via command line arguments:
+
+1. **Configuration File Path:**  
+   Optionally specify a custom configuration file path. If not set, `yprox` looks for `yprox.toml` in the current directory.
+   ```
+   --config <path/to/config.toml>
+   ```
+
+2. **Bind Address:**  
+   Set the bind address in `ip:port` format. This is required if specifying backends via command line.
+   ```
+   --bind <ip:port>
+   ```
+
+3. **Backend Addresses:**  
+   Specify one or more backend addresses, either as `ip:port` or `name=ip:port`. Unnamed backends are automatically named `backend1`, `backend2`, etc.
+   ```
+   --backend <backend_address>
+   ```
+
+4. **Default Backend:**  
+   Name the default backend. If not specified, the first backend will be used.
+   ```
+   --default <backend_name>
+   ```
+
+**Example Usage:**
+
+```sh
+yprox --bind 127.0.0.1:8080 --backend 127.0.0.1:9000 --backend 127.0.0.1:9001
+```
+
+In this example, responses from `127.0.0.1:9001` will be returned to clients.
+
+**Naming Backends:**
+
+For better log clarity, backends can be named using the `key=value` format:
+
+```sh
+yprox --bind 127.0.0.1:8080 --backend qa=127.0.0.1:9000 --backend test=127.0.0.1:9001 
+```
+
+Unspecified backends will be automatically assigned default names such as `backendN`.
+
+**Setting a Default Backend:**
+
+The _default backend_ refers to the chosen backend whose response is forwarded back to the client. In the absence of a specified default, the first backend is automatically selected.
+
+To set a default backend, use:
+
+```sh
+yprox                               \
+    --bind 127.0.0.1:8080           \
+    --backend qa=127.0.0.1:9000     \
+    --backend test=127.0.0.1:9001   \
+    --default test
+```
+
+In this example, responses from `127.0.0.1:9001` will be returned to clients.
+
